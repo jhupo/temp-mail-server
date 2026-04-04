@@ -1,138 +1,219 @@
-# Temp Mail Server (Python)
+# Temp Mail Server
 
-一个可直接部署到 VPS 的临时邮箱服务端：
+Python temporary mail backend for VPS deployment.
 
-- 支持任意本地部分和任意子域收信（`*@jhupo.com`、`*@temp.jhupo.com`、`*@abc.jhupo.com`）
-- `POST /api/v1/mailboxes/new` 创建临时邮箱
-- `GET /api/v1/mailboxes/{address}/latest` 获取最新邮件
-- `GET /api/v1/mailboxes/{address}/latest/code` 提取验证码
-- 内置前端控制台（访问 `/`）
-- SMTP 收件自动入库（可配置自动创建邮箱）
+Features:
+- Receive mail for `*@yourdomain.com`
+- Receive mail for `*@*.yourdomain.com`
+- Create mailboxes by API
+- Fetch latest message, message list, and verification code by API
+- SMTP auto-ingest into PostgreSQL
+- Optional API key protection for mailbox creation
+- Optional lazy mailbox creation on incoming SMTP
 
-## 1. DNS (Cloudflare)
+## Stack
 
-建议配置如下（都使用 DNS only）：
+- FastAPI
+- aiosmtpd
+- PostgreSQL
+- Redis
+- Docker Compose
 
-- `A  mail.jhupo.com -> VPS_IP`
-- `MX jhupo.com -> mail.jhupo.com` (priority 10)
-- `MX *.jhupo.com -> mail.jhupo.com` (priority 10)
+## Cloudflare DNS
 
-说明：
+For a root domain such as `freeloader.xyz`, configure:
 
-- 根域 `jhupo.com` 仍需单独 MX。
-- 服务端会校验 `domain == jhupo.com` 或 `domain.endswith(".jhupo.com")`。
-
-## 2. 本地方式运行（开发用）
-
-```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-cp .env.example .env
-python -m app.main
-python -m app.smtp_server
+```text
+A   mail.freeloader.xyz      -> VPS_IP         DNS only
+MX  freeloader.xyz          -> mail.freeloader.xyz   priority 10
+MX  *.freeloader.xyz        -> mail.freeloader.xyz   priority 10
 ```
 
-## 3. Docker Compose 一键部署（推荐）
+Recommended:
+
+```text
+A   *.freeloader.xyz        -> VPS_IP         DNS only
+```
+
+Notes:
+- `mail.freeloader.xyz` must be `DNS only`, not proxied.
+- Root domain and wildcard MX are both needed.
+- The app accepts `domain == ALLOWED_ROOT_DOMAIN` or any subdomain ending with it.
+
+## Docker Deploy
+
+Start services:
 
 ```bash
 docker compose up -d --build
 ```
 
-默认会启动四个服务：
+Services:
+- `api`: HTTP API on `8000`
+- `smtp`: SMTP receiver on `25`
+- `postgres`: database
+- `redis`: rate limiting backend
 
-- `postgres`：数据库
-- `redis`：限流存储
-- `api`：HTTP API（`8000`）
-- `smtp`：SMTP 收信（`25`）
-
-首次上线前请修改 `docker-compose.yml` 中：
-
-- `POSTGRES_PASSWORD`
-- `DATABASE_URL` 中密码
+Important environment values in [`docker-compose.yml`](C:/Users/jhupo-pc/Desktop/mail/temp-mail-server/docker-compose.yml):
 - `ALLOWED_ROOT_DOMAIN`
+- `POSTGRES_PASSWORD`
+- `DATABASE_URL`
 - `API_MASTER_KEY`
 
-## 4. API 示例
+## Environment
 
-### 4.1 新建邮箱
+Example values are in [`.env.example`](C:/Users/jhupo-pc/Desktop/mail/temp-mail-server/.env.example).
+
+Important options:
+- `ALLOWED_ROOT_DOMAIN`: allowed root domain, for example `freeloader.xyz`
+- `MAILBOX_DEFAULT_TTL_MINUTES`: default mailbox lifetime
+- `ALLOW_AUTO_CREATE_ON_SMTP`: auto-create mailbox rows when a message arrives for an unknown address
+- `API_MASTER_KEY`: if set, `POST /api/v1/mailboxes/new` requires `X-API-Key`
+- `RATE_LIMIT_NEW_PER_MINUTE`: mailbox creation rate limit per IP
+
+## API
+
+Base URL example:
+
+```text
+http://127.0.0.1:8000
+```
+
+### Create mailbox
+
+Request:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/mailboxes/new \
-  -H "X-API-Key: change_me_long_random_value" \
   -H "Content-Type: application/json" \
-  -d '{"domain":"temp.jhupo.com","ttl_minutes":120}'
+  -H "X-API-Key: change_me_long_random_value" \
+  -d '{"domain":"mga.freeloader.xyz","local_part":"asdi","ttl_minutes":60}'
 ```
 
-返回示例：
+Response:
 
 ```json
 {
-  "address": "x8ab29f0d1@temp.jhupo.com",
-  "token": "....",
-  "expires_at": "2026-04-04T12:00:00Z"
+  "address": "asdi@mga.freeloader.xyz",
+  "token": "your_mailbox_token",
+  "expires_at": "2026-04-04T15:00:00.000000"
 }
 ```
 
-### 4.2 获取最新邮件
+Notes:
+- `domain` is optional. If omitted, the server uses `ALLOWED_ROOT_DOMAIN`.
+- `local_part` is optional. If omitted, the server generates a random local part.
+- `ttl_minutes` is optional.
+
+### Get latest message
 
 ```bash
-curl "http://127.0.0.1:8000/api/v1/mailboxes/x8ab29f0d1@temp.jhupo.com/latest?token=YOUR_TOKEN"
+curl "http://127.0.0.1:8000/api/v1/mailboxes/asdi@mga.freeloader.xyz/latest?token=your_mailbox_token"
 ```
 
-### 4.3 获取最新邮件中的验证码
-
-默认正则是 `\b(\d{4,8})\b`，会提取 4-8 位数字：
+### Get message list
 
 ```bash
-curl "http://127.0.0.1:8000/api/v1/mailboxes/x8ab29f0d1@temp.jhupo.com/latest/code?token=YOUR_TOKEN"
+curl "http://127.0.0.1:8000/api/v1/mailboxes/asdi@mga.freeloader.xyz/messages?token=your_mailbox_token&limit=20"
 ```
 
-也可以自定义正则：
+### Extract verification code
+
+Default regex extracts 4 to 8 digit codes:
 
 ```bash
-curl "http://127.0.0.1:8000/api/v1/mailboxes/x8ab29f0d1@temp.jhupo.com/latest/code?token=YOUR_TOKEN&pattern=code%3A%20([A-Z0-9]{6})"
+curl "http://127.0.0.1:8000/api/v1/mailboxes/asdi@mga.freeloader.xyz/latest/code?token=your_mailbox_token"
 ```
 
-## 5. 前端控制台
+Custom regex:
 
-启动后直接打开：
+```bash
+curl "http://127.0.0.1:8000/api/v1/mailboxes/asdi@mga.freeloader.xyz/latest/code?token=your_mailbox_token&pattern=code%3A%20([A-Z0-9]{6})"
+```
 
-- `http://你的服务器IP:8000/`
+## Auth and Access
 
-支持：
+Mailbox creation:
+- If `API_MASTER_KEY` is set, `POST /api/v1/mailboxes/new` requires `X-API-Key`.
+- If `API_MASTER_KEY` is not set, mailbox creation is open.
 
-- 创建邮箱（可选填写 API Key）
-- 保存邮箱会话并切换
-- 手动/自动拉取最新邮件
-- 自动提取验证码
+Mailbox reading:
+- `latest`, `messages`, and `latest/code` require the mailbox `token`.
+- Token is returned only when a mailbox is created through the API.
 
-## 6. Nginx + HTTPS
+## SMTP Behavior
 
-已提供示例配置：
+Incoming mail path:
+- External sender connects to your VPS on port `25`
+- `smtp` container accepts the message
+- Message is parsed and stored in PostgreSQL
 
-- `deploy/nginx.tempmail.conf`
+If `ALLOW_AUTO_CREATE_ON_SMTP=true`:
+- A mailbox row is created automatically when mail arrives for an unknown address
+- This does not automatically grant API read access unless you already have the token
 
-建议 API 使用独立子域，例如 `api.jhupo.com`，再用 certbot 签证书。
+## Health Check
 
-## 7. 防火墙与端口
+```bash
+curl http://127.0.0.1:8000/healthz
+```
 
-至少放行：
+## Troubleshooting
 
-- `25/tcp` (SMTP)
-- `80/tcp` 和 `443/tcp` (Nginx)
+### Mailbox creation works, but external mail does not arrive
 
-如果你不走 Nginx，才需要直接放行 `8000/tcp`。
+Check:
 
-## 8. 生产建议
+```bash
+ss -lntp | grep :25
+docker compose logs --tail=100 smtp
+docker compose ps
+```
 
-- 增加 API 限流（Nginx 或 Redis）
-- 增加 SMTP 单封大小限制
-- 配置 PTR 反向解析，提升投递兼容
-- 增加垃圾邮件过滤和黑名单策略
+### Root domain works, subdomain does not
 
-## 9. 安全与限流说明
+Check wildcard MX and A records:
 
-- `POST /api/v1/mailboxes/new` 默认要求 `X-API-Key`（由 `API_MASTER_KEY` 控制）
-- 若未设置 `API_MASTER_KEY`，则不校验 API key
-- `POST /api/v1/mailboxes/new` 会按 IP 进行每分钟限流（`RATE_LIMIT_NEW_PER_MINUTE`）
+```bash
+dig MX mga.freeloader.xyz +short
+dig A mga.freeloader.xyz +short
+```
+
+Expected:
+
+```text
+10 mail.freeloader.xyz.
+VPS_IP
+```
+
+### Gmail sends but mail is rejected
+
+Make sure:
+- `ALLOWED_ROOT_DOMAIN` matches your real domain
+- The SMTP parser includes the multipart Gmail fix in [`app/smtp_server.py`](C:/Users/jhupo-pc/Desktop/mail/temp-mail-server/app/smtp_server.py)
+- You rebuilt containers after pulling updates
+
+Update containers:
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+### Message exists in database but not in your API result
+
+Check the exact mailbox address and token:
+
+```bash
+docker compose exec postgres psql -U tempmail -d tempmail -c "select id,address,last_message_at from mailboxes order by id desc limit 20;"
+docker compose exec postgres psql -U tempmail -d tempmail -c "select from_addr,subject,received_at from messages order by id desc limit 20;"
+```
+
+## Production Recommendations
+
+- Set `ALLOWED_ROOT_DOMAIN` to your real domain
+- Set a strong `API_MASTER_KEY`
+- Configure reverse PTR for your server IP
+- Keep `mail.freeloader.xyz` and PTR aligned if possible
+- Put Nginx in front of the API if you need HTTPS
+- Limit who can call mailbox creation
