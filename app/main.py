@@ -1,11 +1,8 @@
 from datetime import datetime
 import re
-from pathlib import Path
 
 import uvicorn
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -24,8 +21,6 @@ from app.utils import is_allowed_domain, is_valid_local_part
 
 
 app = FastAPI(title="Temp Mail Service", version="0.1.0")
-FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
-app.mount("/frontend", StaticFiles(directory=str(FRONTEND_DIR)), name="frontend")
 
 
 def get_db():
@@ -59,11 +54,6 @@ def on_startup():
 def healthz(db: Session = Depends(get_db)):
     cleaned = cleanup_expired(db)
     return {"ok": True, "cleaned_mailboxes": cleaned, "ts": datetime.utcnow().isoformat()}
-
-
-@app.get("/", include_in_schema=False)
-def home():
-    return FileResponse(FRONTEND_DIR / "index.html")
 
 
 @app.post("/api/v1/mailboxes/new", response_model=MailboxNewResponse)
