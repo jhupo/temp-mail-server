@@ -1,4 +1,5 @@
 from email import policy
+from email.message import Message
 from email.parser import BytesParser
 
 from aiosmtpd.controller import Controller
@@ -10,34 +11,59 @@ from app.database import Base, SessionLocal, engine
 from app.utils import is_allowed_domain, normalize_address, split_address
 
 
+def _decode_text_part(part: Message, max_chars: int) -> str | None:
+    try:
+        payload = part.get_payload(decode=True)
+    except Exception:
+        payload = None
+
+    if payload is None:
+        try:
+            payload = part.get_payload()
+        except Exception:
+            return None
+
+    if isinstance(payload, str):
+        return payload[:max_chars]
+
+    if not isinstance(payload, (bytes, bytearray)):
+        return None
+
+    charset = part.get_content_charset() or "utf-8"
+    try:
+        return payload.decode(charset, errors="replace")[:max_chars]
+    except LookupError:
+        return payload.decode("utf-8", errors="replace")[:max_chars]
+
+
 def _extract_bodies(raw_content: bytes, max_chars: int) -> tuple[str | None, str | None, str]:
     message = BytesParser(policy=policy.default).parsebytes(raw_content)
     text_body: str | None = None
     html_body: str | None = None
 
-    if message.is_multipart():
-        for part in message.walk():
-            content_type = part.get_content_type()
-            if part.get_content_disposition() == "attachment":
-                continue
-            payload = part.get_content()
-            if isinstance(payload, bytes):
-                payload = payload.decode(errors="replace")
-            if not isinstance(payload, str):
-                continue
-            if content_type == "text/plain" and text_body is None:
-                text_body = payload[:max_chars]
-            if content_type == "text/html" and html_body is None:
-                html_body = payload[:max_chars]
-    else:
-        payload = message.get_content()
-        if isinstance(payload, bytes):
-            payload = payload.decode(errors="replace")
-        if isinstance(payload, str):
-            if message.get_content_type() == "text/html":
-                html_body = payload[:max_chars]
-            else:
-                text_body = payload[:max_chars]
+    for part in message.walk():
+        if part.is_multipart():
+            continue
+
+        content_type = part.get_content_type()
+        if part.get_content_disposition() == "attachment":
+            continue
+
+        payload = _decode_text_part(part, max_chars)
+        if not payload:
+            continue
+
+        if content_type == "text/plain" and text_body is None:
+            text_body = payload
+        elif content_type == "text/html" and html_body is None:
+            html_body = payload
+
+    if text_body is None and html_body is None:
+        fallback = _decode_text_part(message, max_chars)
+        if message.get_content_type() == "text/html":
+            html_body = fallback
+        else:
+            text_body = fallback
 
     raw_headers = str(message)[:max_chars]
     return text_body, html_body, raw_headers
