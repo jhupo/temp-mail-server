@@ -122,6 +122,20 @@ def get_latest_message(db: Session, mailbox_id: int) -> Message | None:
     )
 
 
+def get_messages(db: Session, mailbox_id: int, limit: int = 20) -> list[Message]:
+    safe_limit = max(1, min(limit, 100))
+    return (
+        db.execute(
+            select(Message)
+            .where(Message.mailbox_id == mailbox_id)
+            .order_by(Message.received_at.desc(), Message.id.desc())
+            .limit(safe_limit)
+        )
+        .scalars()
+        .all()
+    )
+
+
 def cleanup_expired(db: Session) -> int:
     now = datetime.utcnow()
     expired_ids = db.execute(select(Mailbox.id).where(Mailbox.expires_at <= now)).scalars().all()

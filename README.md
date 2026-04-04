@@ -6,6 +6,7 @@
 - `POST /api/v1/mailboxes/new` 创建临时邮箱
 - `GET /api/v1/mailboxes/{address}/latest` 获取最新邮件
 - `GET /api/v1/mailboxes/{address}/latest/code` 提取验证码
+- 内置前端控制台（访问 `/`）
 - SMTP 收件自动入库（可配置自动创建邮箱）
 
 ## 1. DNS (Cloudflare)
@@ -93,7 +94,20 @@ curl "http://127.0.0.1:8000/api/v1/mailboxes/x8ab29f0d1@temp.jhupo.com/latest/co
 curl "http://127.0.0.1:8000/api/v1/mailboxes/x8ab29f0d1@temp.jhupo.com/latest/code?token=YOUR_TOKEN&pattern=code%3A%20([A-Z0-9]{6})"
 ```
 
-## 5. Nginx + HTTPS
+## 5. 前端控制台
+
+启动后直接打开：
+
+- `http://你的服务器IP:8000/`
+
+支持：
+
+- 创建邮箱（可选填写 API Key）
+- 保存邮箱会话并切换
+- 手动/自动拉取最新邮件
+- 自动提取验证码
+
+## 6. Nginx + HTTPS
 
 已提供示例配置：
 
@@ -101,7 +115,7 @@ curl "http://127.0.0.1:8000/api/v1/mailboxes/x8ab29f0d1@temp.jhupo.com/latest/co
 
 建议 API 使用独立子域，例如 `api.jhupo.com`，再用 certbot 签证书。
 
-## 6. 防火墙与端口
+## 7. 防火墙与端口
 
 至少放行：
 
@@ -110,14 +124,14 @@ curl "http://127.0.0.1:8000/api/v1/mailboxes/x8ab29f0d1@temp.jhupo.com/latest/co
 
 如果你不走 Nginx，才需要直接放行 `8000/tcp`。
 
-## 7. 生产建议
+## 8. 生产建议
 
 - 增加 API 限流（Nginx 或 Redis）
 - 增加 SMTP 单封大小限制
 - 配置 PTR 反向解析，提升投递兼容
 - 增加垃圾邮件过滤和黑名单策略
 
-## 8. 安全与限流说明
+## 9. 安全与限流说明
 
 - `POST /api/v1/mailboxes/new` 默认要求 `X-API-Key`（由 `API_MASTER_KEY` 控制）
 - 若未设置 `API_MASTER_KEY`，则不校验 API key

@@ -1,19 +1,31 @@
 from datetime import datetime
 import re
+from pathlib import Path
 
 import uvicorn
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.crud import authorize_mailbox, cleanup_expired, create_mailbox, get_latest_message
+from app.crud import authorize_mailbox, cleanup_expired, create_mailbox, get_latest_message, get_messages
 from app.database import Base, SessionLocal, engine
 from app.rate_limit import limiter
-from app.schemas import MailboxCodeResponse, MailboxLatestResponse, MailboxNewRequest, MailboxNewResponse, MessageOut
+from app.schemas import (
+    MailboxCodeResponse,
+    MailboxLatestResponse,
+    MailboxMessagesResponse,
+    MailboxNewRequest,
+    MailboxNewResponse,
+    MessageOut,
+)
 from app.utils import is_allowed_domain, is_valid_local_part
 
 
 app = FastAPI(title="Temp Mail Service", version="0.1.0")
+FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+app.mount("/frontend", StaticFiles(directory=str(FRONTEND_DIR)), name="frontend")
 
 
 def get_db():
@@ -47,6 +59,11 @@ def on_startup():
 def healthz(db: Session = Depends(get_db)):
     cleaned = cleanup_expired(db)
     return {"ok": True, "cleaned_mailboxes": cleaned, "ts": datetime.utcnow().isoformat()}
+
+
+@app.get("/", include_in_schema=False)
+def home():
+    return FileResponse(FRONTEND_DIR / "index.html")
 
 
 @app.post("/api/v1/mailboxes/new", response_model=MailboxNewResponse)
@@ -150,6 +167,42 @@ def latest_code(
     match = code_re.search(text_pool)
     code = match.group(1) if match and match.groups() else (match.group(0) if match else None)
     return MailboxCodeResponse(address=mailbox.address, code=code, received_at=latest.received_at)
+
+
+@app.get("/api/v1/mailboxes/{address}/messages", response_model=MailboxMessagesResponse)
+def mailbox_messages(
+    address: str,
+    db: Session = Depends(get_db),
+    token_query: str | None = Query(default=None, alias="token"),
+    token_header: str | None = Header(default=None, alias="X-Mailbox-Token"),
+    limit: int = Query(default=20, ge=1, le=100),
+):
+    cleanup_expired(db)
+    token = token_header or token_query
+    if not token:
+        raise HTTPException(status_code=401, detail="token required")
+    try:
+        mailbox = authorize_mailbox(db, address=address, token=token)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    items = get_messages(db, mailbox.id, limit=limit)
+    return MailboxMessagesResponse(
+        address=mailbox.address,
+        messages=[
+            MessageOut(
+                from_addr=m.from_addr,
+                subject=m.subject,
+                text_body=m.text_body,
+                html_body=m.html_body,
+                raw_headers=m.raw_headers,
+                received_at=m.received_at,
+            )
+            for m in items
+        ],
+    )
 
 
 def run_api() -> None:

@@ -33,3 +33,8 @@ class MailboxCodeResponse(BaseModel):
     address: EmailStr
     code: str | None
     received_at: datetime | None
+
+
+class MailboxMessagesResponse(BaseModel):
+    address: EmailStr
+    messages: list[MessageOut]
