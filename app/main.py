@@ -14,7 +14,7 @@ from app.crud import (
     get_messages,
     get_messages_admin,
 )
-from app.database import Base, SessionLocal, engine
+from app.database import SessionLocal, init_db
 from app.utils import is_allowed_domain, is_valid_local_part
 
 
@@ -69,7 +69,7 @@ def _extract_token_header(authorization: str | None, x_user_token: str | None) -
 
 @app.on_event("startup")
 def on_startup():
-    Base.metadata.create_all(bind=engine)
+    init_db()
 
 
 @app.get("/healthz")

@@ -7,7 +7,7 @@ from aiosmtpd.smtp import Envelope, Session
 
 from app.config import settings
 from app.crud import save_incoming_message
-from app.database import Base, SessionLocal, engine
+from app.database import SessionLocal, init_db
 from app.utils import is_allowed_domain, normalize_address, split_address
 
 
@@ -111,7 +111,7 @@ class TempMailSMTPHandler:
 
 
 def run_smtp_server() -> None:
-    Base.metadata.create_all(bind=engine)
+    init_db()
     controller = Controller(
         TempMailSMTPHandler(),
         hostname=settings.smtp_host,

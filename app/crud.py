@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -39,9 +40,27 @@ def create_mailbox(
                 expires_at=datetime.utcnow() + timedelta(minutes=ttl),
             )
             db.add(mailbox)
-            db.commit()
-            db.refresh(mailbox)
-            return mailbox, token
+            try:
+                db.commit()
+                db.refresh(mailbox)
+                return mailbox, token
+            except IntegrityError:
+                db.rollback()
+                existing = db.execute(select(Mailbox).where(Mailbox.address == address)).scalar_one_or_none()
+                if existing is None:
+                    if desired_local:
+                        continue
+                    continue
+                if desired_local:
+                    if existing.expires_at <= datetime.utcnow():
+                        token = generate_token()
+                        existing.token_hash = hash_token(token)
+                        existing.expires_at = datetime.utcnow() + timedelta(minutes=ttl)
+                        db.commit()
+                        db.refresh(existing)
+                        return existing, token
+                    raise ValueError("mailbox already exists and not expired")
+                continue
 
         if desired_local:
             if existing.expires_at <= datetime.utcnow():
@@ -106,7 +125,13 @@ def save_incoming_message(
             expires_at=datetime.utcnow() + timedelta(minutes=settings.mailbox_default_ttl_minutes),
         )
         db.add(mailbox)
-        db.flush()
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            mailbox = get_mailbox_by_address(db, address)
+            if mailbox is None:
+                raise
 
     message = Message(
         mailbox_id=mailbox.id,
@@ -118,7 +143,11 @@ def save_incoming_message(
     )
     mailbox.last_message_at = datetime.utcnow()
     db.add(message)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise
 
 
 def get_latest_message(db: Session, mailbox_id: int) -> Message | None:
