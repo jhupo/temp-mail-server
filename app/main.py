@@ -1,22 +1,20 @@
 from datetime import datetime
-import re
 
 import uvicorn
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.crud import authorize_mailbox, cleanup_expired, create_mailbox, get_latest_message, get_messages
-from app.database import Base, SessionLocal, engine
-from app.rate_limit import limiter
-from app.schemas import (
-    MailboxCodeResponse,
-    MailboxLatestResponse,
-    MailboxMessagesResponse,
-    MailboxNewRequest,
-    MailboxNewResponse,
-    MessageOut,
+from app.crud import (
+    cleanup_expired,
+    create_mailbox,
+    get_mailbox_by_token,
+    get_message_by_id,
+    get_message_by_id_admin,
+    get_messages,
+    get_messages_admin,
 )
+from app.database import Base, SessionLocal, engine
 from app.utils import is_allowed_domain, is_valid_local_part
 
 
@@ -31,18 +29,42 @@ def get_db():
         db.close()
 
 
-def _get_client_ip(request: Request) -> str:
-    xff = request.headers.get("X-Forwarded-For")
-    if xff:
-        return xff.split(",")[0].strip()
-    if request.client and request.client.host:
-        return request.client.host
-    return "unknown"
+def _require_admin_auth(admin_auth: str | None) -> None:
+    if settings.api_master_key and admin_auth != settings.api_master_key:
+        raise HTTPException(status_code=401, detail="invalid admin auth")
 
 
-def _require_api_key(api_key: str | None) -> None:
-    if settings.api_master_key and api_key != settings.api_master_key:
-        raise HTTPException(status_code=401, detail="invalid api key")
+def _require_mailbox_from_token(db: Session, token: str | None):
+    if not token:
+        raise HTTPException(status_code=401, detail="token required")
+    mailbox = get_mailbox_by_token(db, token)
+    if mailbox is None:
+        raise HTTPException(status_code=403, detail="invalid token")
+    return mailbox
+
+
+def _serialize_message(message, *, address: str) -> dict:
+    return {
+        "id": str(message.id),
+        "mail_id": str(message.id),
+        "address": address,
+        "source": message.from_addr,
+        "from": message.from_addr,
+        "subject": message.subject,
+        "text": message.text_body,
+        "body": message.text_body,
+        "html": message.html_body,
+        "raw": message.raw_headers,
+        "createdAt": message.received_at.isoformat() if message.received_at else None,
+        "created_at": message.received_at.isoformat() if message.received_at else None,
+    }
+
+
+def _extract_token_header(authorization: str | None, x_user_token: str | None) -> str | None:
+    bearer = ""
+    if authorization and authorization.lower().startswith("bearer "):
+        bearer = authorization[7:].strip()
+    return bearer or (x_user_token or "").strip() or None
 
 
 @app.on_event("startup")
@@ -56,143 +78,175 @@ def healthz(db: Session = Depends(get_db)):
     return {"ok": True, "cleaned_mailboxes": cleaned, "ts": datetime.utcnow().isoformat()}
 
 
-@app.post("/api/v1/mailboxes/new", response_model=MailboxNewResponse)
-def new_mailbox(
-    payload: MailboxNewRequest,
-    request: Request,
-    response: Response,
+@app.post("/admin/new_address")
+def compat_admin_new_address(
+    payload: dict | None = Body(default=None),
     db: Session = Depends(get_db),
-    api_key: str | None = Header(default=None, alias="X-API-Key"),
+    admin_auth: str | None = Header(default=None, alias="x-admin-auth"),
 ):
-    _require_api_key(api_key)
-    client_ip = _get_client_ip(request)
-    allowed, retry_after = limiter.check_new_mailbox(client_ip)
-    if not allowed:
-        response.headers["Retry-After"] = str(retry_after)
-        raise HTTPException(status_code=429, detail="rate limit exceeded")
-
+    _require_admin_auth(admin_auth)
     cleanup_expired(db)
-    domain = (payload.domain or settings.allowed_root_domain).lower()
+    payload = payload or {}
+    domain = (payload.get("domain") or settings.allowed_root_domain).lower()
+    local_part = payload.get("name")
+    if payload.get("local_part"):
+        local_part = payload.get("local_part")
+    ttl_minutes = payload.get("ttl_minutes")
     if not is_allowed_domain(domain):
         raise HTTPException(status_code=400, detail="domain not allowed")
-    if payload.local_part and not is_valid_local_part(payload.local_part):
+    if local_part and not is_valid_local_part(local_part):
         raise HTTPException(status_code=400, detail="invalid local_part format")
-
     try:
         mailbox, token = create_mailbox(
             db,
             domain=domain,
-            local_part=payload.local_part,
-            ttl_minutes=payload.ttl_minutes,
+            local_part=local_part,
+            ttl_minutes=ttl_minutes,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "address": mailbox.address,
+        "jwt": token,
+        "token": token,
+        "address_id": str(mailbox.id),
+        "id": str(mailbox.id),
+        "expires_at": mailbox.expires_at.isoformat(),
+    }
 
-    return MailboxNewResponse(address=mailbox.address, token=token, expires_at=mailbox.expires_at)
 
-
-@app.get("/api/v1/mailboxes/{address}/latest", response_model=MailboxLatestResponse)
-def latest_mail(
-    address: str,
+@app.post("/inbox/create")
+def compat_inbox_create(
     db: Session = Depends(get_db),
-    token_query: str | None = Query(default=None, alias="token"),
-    token_header: str | None = Header(default=None, alias="X-Mailbox-Token"),
 ):
     cleanup_expired(db)
-    token = token_header or token_query
-    if not token:
-        raise HTTPException(status_code=401, detail="token required")
-    try:
-        mailbox = authorize_mailbox(db, address=address, token=token)
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-
-    latest = get_latest_message(db, mailbox.id)
-    latest_out = None
-    if latest:
-        latest_out = MessageOut(
-            from_addr=latest.from_addr,
-            subject=latest.subject,
-            text_body=latest.text_body,
-            html_body=latest.html_body,
-            raw_headers=latest.raw_headers,
-            received_at=latest.received_at,
-        )
-    return MailboxLatestResponse(address=mailbox.address, latest=latest_out)
-
-
-@app.get("/api/v1/mailboxes/{address}/latest/code", response_model=MailboxCodeResponse)
-def latest_code(
-    address: str,
-    db: Session = Depends(get_db),
-    token_query: str | None = Query(default=None, alias="token"),
-    token_header: str | None = Header(default=None, alias="X-Mailbox-Token"),
-    pattern: str = Query(default=r"\b(\d{4,8})\b"),
-):
-    cleanup_expired(db)
-    token = token_header or token_query
-    if not token:
-        raise HTTPException(status_code=401, detail="token required")
-    try:
-        mailbox = authorize_mailbox(db, address=address, token=token)
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-
-    latest = get_latest_message(db, mailbox.id)
-    if latest is None:
-        return MailboxCodeResponse(address=mailbox.address, code=None, received_at=None)
-
-    try:
-        code_re = re.compile(pattern)
-    except re.error as exc:
-        raise HTTPException(status_code=400, detail=f"invalid regex pattern: {exc}") from exc
-
-    text_pool = "\n".join(
-        part for part in [latest.subject or "", latest.text_body or "", latest.html_body or ""] if part
+    mailbox, token = create_mailbox(
+        db,
+        domain=settings.allowed_root_domain.lower(),
+        local_part=None,
+        ttl_minutes=None,
     )
-    match = code_re.search(text_pool)
-    code = match.group(1) if match and match.groups() else (match.group(0) if match else None)
-    return MailboxCodeResponse(address=mailbox.address, code=code, received_at=latest.received_at)
+    return {
+        "address": mailbox.address,
+        "token": token,
+        "expires_at": mailbox.expires_at.isoformat(),
+    }
 
 
-@app.get("/api/v1/mailboxes/{address}/messages", response_model=MailboxMessagesResponse)
-def mailbox_messages(
-    address: str,
+@app.get("/inbox")
+def compat_inbox(
+    token: str = Query(...),
     db: Session = Depends(get_db),
-    token_query: str | None = Query(default=None, alias="token"),
-    token_header: str | None = Header(default=None, alias="X-Mailbox-Token"),
-    limit: int = Query(default=20, ge=1, le=100),
 ):
     cleanup_expired(db)
-    token = token_header or token_query
-    if not token:
-        raise HTTPException(status_code=401, detail="token required")
-    try:
-        mailbox = authorize_mailbox(db, address=address, token=token)
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    mailbox = _require_mailbox_from_token(db, token)
+    items = get_messages(db, mailbox.id, limit=50)
+    emails = [
+        {
+            "from": item.from_addr,
+            "subject": item.subject,
+            "body": item.text_body,
+            "html": item.html_body,
+            "date": int(item.received_at.timestamp()) if item.received_at else None,
+            "id": str(item.id),
+        }
+        for item in items
+    ]
+    return {
+        "address": mailbox.address,
+        "emails": emails,
+    }
 
-    items = get_messages(db, mailbox.id, limit=limit)
-    return MailboxMessagesResponse(
-        address=mailbox.address,
-        messages=[
-            MessageOut(
-                from_addr=m.from_addr,
-                subject=m.subject,
-                text_body=m.text_body,
-                html_body=m.html_body,
-                raw_headers=m.raw_headers,
-                received_at=m.received_at,
-            )
-            for m in items
-        ],
-    )
+
+
+
+@app.get("/admin/mails")
+def compat_admin_mails(
+    db: Session = Depends(get_db),
+    admin_auth: str | None = Header(default=None, alias="x-admin-auth"),
+    address: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    _require_admin_auth(admin_auth)
+    cleanup_expired(db)
+    rows = get_messages_admin(db, address=address, limit=limit, offset=offset)
+    return {
+        "results": [_serialize_message(message, address=mailbox.address) for mailbox, message in rows]
+    }
+
+
+@app.get("/admin/mails/{mail_id}")
+def compat_admin_mail_detail(
+    mail_id: int,
+    db: Session = Depends(get_db),
+    admin_auth: str | None = Header(default=None, alias="x-admin-auth"),
+):
+    _require_admin_auth(admin_auth)
+    cleanup_expired(db)
+    row = get_message_by_id_admin(db, mail_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="mail not found")
+    mailbox, message = row
+    return _serialize_message(message, address=mailbox.address)
+
+
+@app.get("/api/mails")
+def compat_user_mails_bearer(
+    db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    cleanup_expired(db)
+    token = _extract_token_header(authorization, None)
+    mailbox = _require_mailbox_from_token(db, token)
+    items = get_messages(db, mailbox.id, limit=limit + offset)
+    sliced = items[offset : offset + limit]
+    return {"results": [_serialize_message(item, address=mailbox.address) for item in sliced]}
+
+
+@app.get("/api/mails/{mail_id}")
+def compat_user_mail_detail_bearer(
+    mail_id: int,
+    db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+):
+    cleanup_expired(db)
+    token = _extract_token_header(authorization, None)
+    mailbox = _require_mailbox_from_token(db, token)
+    message = get_message_by_id(db, mailbox.id, mail_id)
+    if message is None:
+        raise HTTPException(status_code=404, detail="mail not found")
+    return _serialize_message(message, address=mailbox.address)
+
+
+@app.get("/user_api/mails")
+def compat_user_mails_token(
+    db: Session = Depends(get_db),
+    x_user_token: str | None = Header(default=None, alias="x-user-token"),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    cleanup_expired(db)
+    mailbox = _require_mailbox_from_token(db, x_user_token)
+    items = get_messages(db, mailbox.id, limit=limit + offset)
+    sliced = items[offset : offset + limit]
+    return {"results": [_serialize_message(item, address=mailbox.address) for item in sliced]}
+
+
+@app.get("/user_api/mails/{mail_id}")
+def compat_user_mail_detail_token(
+    mail_id: int,
+    db: Session = Depends(get_db),
+    x_user_token: str | None = Header(default=None, alias="x-user-token"),
+):
+    cleanup_expired(db)
+    mailbox = _require_mailbox_from_token(db, x_user_token)
+    message = get_message_by_id(db, mailbox.id, mail_id)
+    if message is None:
+        raise HTTPException(status_code=404, detail="mail not found")
+    return _serialize_message(message, address=mailbox.address)
 
 
 def run_api() -> None:

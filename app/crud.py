@@ -60,6 +60,18 @@ def get_mailbox_by_address(db: Session, address: str) -> Mailbox | None:
     return db.execute(select(Mailbox).where(Mailbox.address == normalize_address(address))).scalar_one_or_none()
 
 
+def get_mailbox_by_token(db: Session, token: str) -> Mailbox | None:
+    if not token:
+        return None
+    candidates = db.execute(select(Mailbox).where(Mailbox.token_hash.is_not(None))).scalars().all()
+    for mailbox in candidates:
+        if mailbox.expires_at <= datetime.utcnow():
+            continue
+        if verify_token(token, mailbox.token_hash):
+            return mailbox
+    return None
+
+
 def authorize_mailbox(db: Session, address: str, token: str) -> Mailbox:
     mailbox = get_mailbox_by_address(db, address)
     if mailbox is None:
@@ -134,6 +146,54 @@ def get_messages(db: Session, mailbox_id: int, limit: int = 20) -> list[Message]
         .scalars()
         .all()
     )
+
+
+def get_message_by_id(db: Session, mailbox_id: int, message_id: int) -> Message | None:
+    return (
+        db.execute(
+            select(Message)
+            .where(Message.mailbox_id == mailbox_id, Message.id == message_id)
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+
+
+def get_message_by_id_admin(db: Session, message_id: int) -> tuple[Mailbox, Message] | None:
+    row = (
+        db.execute(
+            select(Mailbox, Message)
+            .join(Message, Message.mailbox_id == Mailbox.id)
+            .where(Message.id == message_id)
+            .limit(1)
+        )
+        .first()
+    )
+    if row is None:
+        return None
+    return row[0], row[1]
+
+
+def get_messages_admin(
+    db: Session,
+    *,
+    address: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[tuple[Mailbox, Message]]:
+    safe_limit = max(1, min(limit, 100))
+    safe_offset = max(0, offset)
+    stmt = (
+        select(Mailbox, Message)
+        .join(Message, Message.mailbox_id == Mailbox.id)
+        .order_by(Message.received_at.desc(), Message.id.desc())
+        .limit(safe_limit)
+        .offset(safe_offset)
+    )
+    if address:
+        stmt = stmt.where(Mailbox.address == normalize_address(address))
+    return [(row[0], row[1]) for row in db.execute(stmt).all()]
 
 
 def cleanup_expired(db: Session) -> int:
