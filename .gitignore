@@ -209,3 +209,8 @@ __marimo__/
 # local runtime files
 .run/
 temp_mail.db
+temp_mail.db-shm
+temp_mail.db-wal
+alembic_check.sqlite3
+api.out.log
+api.err.log

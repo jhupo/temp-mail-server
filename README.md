@@ -38,7 +38,34 @@ Health:
 - User token endpoints use `x-user-token`
 - `/inbox` uses query param `token`
 
-If `API_MASTER_KEY` is set, `x-admin-auth` must match it.
+Admin endpoints are disabled unless `API_MASTER_KEY` is set, and then `x-admin-auth` must match it.
+
+## Domain Configuration
+
+- `ALLOWED_ROOT_DOMAINS` accepts a comma-separated allowlist such as `example.com,mail.example.com`
+- `ALLOWED_ROOT_DOMAIN` is kept as a backward-compatible single-domain fallback
+- mailbox creation without an explicit `domain` uses the first domain in `ALLOWED_ROOT_DOMAINS`
+- SMTP recipients are accepted when they match an allowed domain or one of its subdomains
+
+If SMTP auto-creates a mailbox before you claim it, you can later call `POST /admin/new_address` with the exact address and receive a fresh token for that mailbox.
+
+## Database Migrations
+
+Alembic is configured in this repo.
+
+Run the latest migrations:
+
+```bash
+alembic upgrade head
+```
+
+Create a new migration after model changes:
+
+```bash
+alembic revision -m "describe change"
+```
+
+If you are migrating an existing database that was created before `ix_mailboxes_token_hash` existed, apply the Alembic migration path instead of creating the index manually.
 
 ## Typical Flow
 

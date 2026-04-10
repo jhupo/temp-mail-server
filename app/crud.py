@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models import Mailbox, Message
 from app.security import generate_token, hash_token, verify_token
+from app.time_utils import ensure_utc, utcnow
 from app.utils import is_valid_local_part, make_random_local_part, normalize_address, split_address
 
 
@@ -27,6 +28,14 @@ def create_mailbox(
     else:
         desired_local = None
 
+    def _issue_token(mailbox: Mailbox) -> tuple[Mailbox, str]:
+        token = generate_token()
+        mailbox.token_hash = hash_token(token)
+        mailbox.expires_at = utcnow() + timedelta(minutes=ttl)
+        db.commit()
+        db.refresh(mailbox)
+        return mailbox, token
+
     for _ in range(20):
         final_local = desired_local or make_random_local_part()
         address = normalize_address(f"{final_local}@{domain}")
@@ -37,7 +46,7 @@ def create_mailbox(
                 address=address,
                 domain=domain,
                 token_hash=hash_token(token),
-                expires_at=datetime.utcnow() + timedelta(minutes=ttl),
+                expires_at=utcnow() + timedelta(minutes=ttl),
             )
             db.add(mailbox)
             try:
@@ -52,24 +61,14 @@ def create_mailbox(
                         continue
                     continue
                 if desired_local:
-                    if existing.expires_at <= datetime.utcnow():
-                        token = generate_token()
-                        existing.token_hash = hash_token(token)
-                        existing.expires_at = datetime.utcnow() + timedelta(minutes=ttl)
-                        db.commit()
-                        db.refresh(existing)
-                        return existing, token
+                    if ensure_utc(existing.expires_at) <= utcnow() or existing.token_hash is None:
+                        return _issue_token(existing)
                     raise ValueError("mailbox already exists and not expired")
                 continue
 
         if desired_local:
-            if existing.expires_at <= datetime.utcnow():
-                token = generate_token()
-                existing.token_hash = hash_token(token)
-                existing.expires_at = datetime.utcnow() + timedelta(minutes=ttl)
-                db.commit()
-                db.refresh(existing)
-                return existing, token
+            if ensure_utc(existing.expires_at) <= utcnow() or existing.token_hash is None:
+                return _issue_token(existing)
             raise ValueError("mailbox already exists and not expired")
 
     raise ValueError("failed to create unique local part")
@@ -82,20 +81,29 @@ def get_mailbox_by_address(db: Session, address: str) -> Mailbox | None:
 def get_mailbox_by_token(db: Session, token: str) -> Mailbox | None:
     if not token:
         return None
-    candidates = db.execute(select(Mailbox).where(Mailbox.token_hash.is_not(None))).scalars().all()
-    for mailbox in candidates:
-        if mailbox.expires_at <= datetime.utcnow():
-            continue
-        if verify_token(token, mailbox.token_hash):
-            return mailbox
-    return None
+    token_digest = hash_token(token)
+    mailbox = (
+        db.execute(
+            select(Mailbox).where(
+                Mailbox.token_hash == token_digest,
+                Mailbox.expires_at > utcnow(),
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if mailbox is None:
+        return None
+    if not verify_token(token, mailbox.token_hash):
+        return None
+    return mailbox
 
 
 def authorize_mailbox(db: Session, address: str, token: str) -> Mailbox:
     mailbox = get_mailbox_by_address(db, address)
     if mailbox is None:
         raise LookupError("mailbox not found")
-    if mailbox.expires_at <= datetime.utcnow():
+    if ensure_utc(mailbox.expires_at) <= utcnow():
         raise PermissionError("mailbox expired")
     if not verify_token(token, mailbox.token_hash):
         raise PermissionError("invalid token")
@@ -122,7 +130,7 @@ def save_incoming_message(
             address=address,
             domain=domain,
             token_hash=None,
-            expires_at=datetime.utcnow() + timedelta(minutes=settings.mailbox_default_ttl_minutes),
+            expires_at=utcnow() + timedelta(minutes=settings.mailbox_default_ttl_minutes),
         )
         db.add(mailbox)
         try:
@@ -141,7 +149,7 @@ def save_incoming_message(
         html_body=html_body,
         raw_headers=raw_headers,
     )
-    mailbox.last_message_at = datetime.utcnow()
+    mailbox.last_message_at = utcnow()
     db.add(message)
     try:
         db.commit()
@@ -226,7 +234,7 @@ def get_messages_admin(
 
 
 def cleanup_expired(db: Session) -> int:
-    now = datetime.utcnow()
+    now = utcnow()
     expired_ids = db.execute(select(Mailbox.id).where(Mailbox.expires_at <= now)).scalars().all()
     if not expired_ids:
         return 0

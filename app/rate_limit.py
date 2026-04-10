@@ -4,8 +4,14 @@ import threading
 import time
 from collections import defaultdict
 
-from redis import Redis
-from redis.exceptions import RedisError
+try:
+    from redis import Redis
+    from redis.exceptions import RedisError
+except ModuleNotFoundError:
+    Redis = None  # type: ignore[assignment]
+
+    class RedisError(Exception):
+        pass
 
 from app.config import settings
 
@@ -15,7 +21,7 @@ class RateLimiter:
         self._redis: Redis | None = None
         self._memory_bucket: dict[str, tuple[int, float]] = defaultdict(lambda: (0, 0.0))
         self._lock = threading.Lock()
-        if settings.redis_url:
+        if settings.redis_url and Redis is not None:
             try:
                 self._redis = Redis.from_url(settings.redis_url, decode_responses=True, socket_timeout=1)
                 self._redis.ping()

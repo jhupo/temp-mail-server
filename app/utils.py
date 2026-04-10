@@ -18,8 +18,11 @@ def split_address(address: str) -> tuple[str, str]:
 
 
 def is_allowed_domain(domain: str) -> bool:
-    root = settings.allowed_root_domain.lower()
-    return domain == root or domain.endswith(f".{root}")
+    normalized = domain.lower()
+    for root in settings.allowed_domains:
+        if normalized == root or normalized.endswith(f".{root}"):
+            return True
+    return False
 
 
 def is_valid_local_part(local_part: str) -> bool:
