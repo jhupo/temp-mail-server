@@ -785,6 +785,9 @@ DEFAULT_SETTINGS = {
     "certStatus": "idle",
     "certLastResult": "",
     "certLastRunAt": "",
+    "updateLastCheckAt": "",
+    "updateLastResult": "",
+    "updateReloadCommand": settings.update_reload_command,
 }
 
 

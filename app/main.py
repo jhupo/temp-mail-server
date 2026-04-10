@@ -76,6 +76,7 @@ from app.rate_limit import limiter
 from app.security import hash_password
 from app.storage import resolve_object_path, save_base64_object
 from app.time_utils import ensure_utc, utcnow
+from app.update_manager import apply_update, update_status
 from app.utils import is_allowed_domain, is_valid_local_part, normalize_address, split_address
 
 
@@ -1027,6 +1028,45 @@ def compat_cert_renew(
     result = run_certbot_script("renew", domain=domain, email=email)
     updated = update_app_settings(db, apply_cert_update(current, result))
     return ok(cert_status_payload(updated))
+
+
+@app.get("/system/update/status")
+@app.post("/system/update/check")
+def compat_update_status(
+    db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+):
+    _user, _token = _require_login_user(db, authorization)
+    status = update_status()
+    update_app_settings(
+        db,
+        {
+            "updateLastCheckAt": status.get("checkedAt", ""),
+            "updateLastResult": status.get("message", ""),
+        },
+    )
+    return ok(status)
+
+
+@app.post("/system/update/apply")
+def compat_update_apply(
+    db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+):
+    _user, _token = _require_login_user(db, authorization)
+    result = apply_update()
+    update_app_settings(
+        db,
+        {
+            "updateLastCheckAt": result.get("finishedAt", ""),
+            "updateLastResult": result.get("message", ""),
+        },
+    )
+    if not result.get("ok"):
+        payload = fail(result.get("message", "update failed"), 500)
+        payload["data"] = result
+        return payload
+    return ok(result)
 
 
 @app.get("/role/permTree")

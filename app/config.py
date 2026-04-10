@@ -1,6 +1,7 @@
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
+import sys
 
 
 class Settings(BaseSettings):
@@ -26,6 +27,9 @@ class Settings(BaseSettings):
     certbot_scripts_dir: str = Field(default="deploy/certbot", alias="CERTBOT_SCRIPTS_DIR")
     certbot_reload_command: str = Field(default="nginx -s reload", alias="CERTBOT_RELOAD_COMMAND")
     cert_renew_check_seconds: int = Field(default=43200, alias="CERT_RENEW_CHECK_SECONDS")
+    update_branch: str = Field(default="master", alias="UPDATE_BRANCH")
+    update_remote: str = Field(default="origin", alias="UPDATE_REMOTE")
+    update_reload_command: str = Field(default="", alias="UPDATE_RELOAD_COMMAND")
 
     @property
     def allowed_domains(self) -> list[str]:
@@ -64,6 +68,14 @@ class Settings(BaseSettings):
     @property
     def certbot_scripts_path(self) -> Path:
         return Path(self.certbot_scripts_dir)
+
+    @property
+    def repo_root_path(self) -> Path:
+        return Path(__file__).resolve().parent.parent
+
+    @property
+    def python_executable(self) -> str:
+        return sys.executable
 
 
 settings = Settings()

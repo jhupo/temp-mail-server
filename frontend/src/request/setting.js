@@ -31,3 +31,15 @@ export function certApply() {
 export function certRenew() {
     return http.post('/cert/renew')
 }
+
+export function updateStatus() {
+    return http.get('/system/update/status')
+}
+
+export function updateCheck() {
+    return http.post('/system/update/check')
+}
+
+export function updateApply() {
+    return http.post('/system/update/apply')
+}

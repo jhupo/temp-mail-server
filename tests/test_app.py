@@ -410,6 +410,31 @@ class ApiBehaviorTests(TempMailTestCase):
             self.assertEqual(reg_list.status_code, 200)
             self.assertTrue(any(item["code"] == "INVITE01" for item in reg_list.json()["data"]))
 
+    def test_system_update_endpoints_use_update_manager(self):
+        with self.make_client() as client:
+            login = client.post("/login", json={"email": "superadmin", "password": "sueradmin"})
+            token = login.json()["data"]["token"]
+
+            with patch("app.main.update_status") as mocked_status:
+                mocked_status.return_value = {
+                    "branch": "master",
+                    "remote": "origin",
+                    "localHead": "a",
+                    "remoteHead": "b",
+                    "hasUpdate": True,
+                    "checkedAt": "2026-04-10T00:00:00+00:00",
+                    "message": "ok",
+                }
+                status = client.get("/system/update/status", headers={"Authorization": token})
+            self.assertEqual(status.status_code, 200)
+            self.assertTrue(status.json()["data"]["hasUpdate"])
+
+            with patch("app.main.apply_update") as mocked_apply:
+                mocked_apply.return_value = {"ok": True, "message": "update applied", "finishedAt": "2026-04-10T00:00:00+00:00", "steps": []}
+                apply = client.post("/system/update/apply", headers={"Authorization": token})
+            self.assertEqual(apply.status_code, 200)
+            self.assertEqual(apply.json()["data"]["message"], "update applied")
+
 
 class MailboxClaimTests(TempMailTestCase):
     def test_auto_created_mailbox_can_be_claimed_by_admin(self):

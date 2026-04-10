@@ -416,6 +416,49 @@
             </div>
           </div>
 
+          <div class="settings-card">
+            <div class="card-title">System Update</div>
+            <div class="card-content">
+              <div class="setting-item">
+                <div><span>Branch</span></div>
+                <div class="forward">
+                  <span>{{ updateInfo.branch || 'master' }}</span>
+                </div>
+              </div>
+              <div class="setting-item">
+                <div><span>Has Update</span></div>
+                <div class="forward">
+                  <el-tag :type="updateInfo.hasUpdate ? 'warning' : 'success'">
+                    {{ updateInfo.hasUpdate ? 'YES' : 'NO' }}
+                  </el-tag>
+                </div>
+              </div>
+              <div class="setting-item">
+                <div><span>Reload Command</span></div>
+                <div>
+                  <el-input v-model="setting.updateReloadCommand" placeholder="optional restart command" />
+                </div>
+              </div>
+              <div class="setting-item">
+                <div><span>Last Result</span></div>
+                <div class="r2domain">
+                  <span>{{ updateInfo.message || setting.updateLastResult }}</span>
+                </div>
+              </div>
+              <div class="setting-item">
+                <div><span>Actions</span></div>
+                <div class="forward">
+                  <el-button class="opt-button" size="small" type="primary" :loading="updateLoading" @click="checkSystemUpdate">
+                    Check
+                  </el-button>
+                  <el-button class="opt-button" size="small" type="primary" :loading="updateLoading" @click="applySystemUpdate">
+                    Apply
+                  </el-button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="settings-card about">
             <div class="card-title">{{ $t('about') }}</div>
             <div class="card-content">
@@ -805,7 +848,7 @@
 
 <script setup>
 import {computed, defineOptions, reactive, ref} from "vue";
-import {certApply, certRenew, certStatus, deleteBackground, setBackground, settingQuery, settingSet} from "@/request/setting.js";
+import {certApply, certRenew, certStatus, deleteBackground, setBackground, settingQuery, settingSet, updateApply, updateCheck, updateStatus} from "@/request/setting.js";
 import {useSettingStore} from "@/store/setting.js";
 import {useUiStore} from "@/store/ui.js";
 import {useUserStore} from "@/store/user.js";
@@ -899,6 +942,15 @@ const certRuntime = reactive({
   lastResult: '',
   lastRunAt: '',
 })
+const updateLoading = ref(false)
+const updateInfo = reactive({
+  branch: '',
+  localHead: '',
+  remoteHead: '',
+  hasUpdate: false,
+  checkedAt: '',
+  message: '',
+})
 
 const regKeyOptions = computed(() => [
   {label: t('enable'), value: 0},
@@ -937,6 +989,7 @@ const tgMsgLabelWidth = computed(() => locale.value === 'en' ? '120px' : '100px'
 getSettings()
 getUpdate()
 loadCertStatus()
+loadUpdateStatus()
 
 function getSettings() {
   settingQuery().then(settingData => {
@@ -1002,6 +1055,56 @@ function renewCert() {
     })
   }).finally(() => {
     certLoading.value = false
+  })
+}
+
+function loadUpdateStatus() {
+  updateStatus().then(data => {
+    Object.assign(updateInfo, data)
+  }).catch((e) => {
+    console.error(e)
+  })
+}
+
+function checkSystemUpdate() {
+  updateLoading.value = true
+  updateCheck().then(data => {
+    Object.assign(updateInfo, data)
+    ElMessage({
+      message: data.hasUpdate ? 'Update available' : 'Already latest',
+      type: data.hasUpdate ? 'warning' : 'success',
+      plain: true,
+    })
+  }).finally(() => {
+    updateLoading.value = false
+  })
+}
+
+function applySystemUpdate() {
+  updateLoading.value = true
+  updateApply().then(data => {
+    Object.assign(updateInfo, {
+      message: data.message,
+      checkedAt: data.finishedAt || '',
+      hasUpdate: false,
+    })
+    ElMessage({
+      message: data.message || 'Update applied',
+      type: 'success',
+      plain: true,
+    })
+  }).catch((e) => {
+    const payload = e?.response?.data?.data
+    if (payload) {
+      updateInfo.message = payload.message || 'Update failed'
+    }
+    ElMessage({
+      message: payload?.message || e?.message || 'Update failed',
+      type: 'error',
+      plain: true,
+    })
+  }).finally(() => {
+    updateLoading.value = false
   })
 }
 
