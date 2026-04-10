@@ -180,6 +180,11 @@ def _domain_allowed_from_settings(current: dict, domain: str) -> bool:
     return False
 
 
+def _require_domains_configured(current: dict):
+    if not configured_domains(current):
+        raise HTTPException(status_code=400, detail="no domains configured")
+
+
 def _compat_email(message, mailbox_address: str, user_email: str) -> dict:
     received_at = ensure_utc(message.received_at)
     return {
@@ -356,6 +361,7 @@ def compat_admin_new_address(
     _require_admin_auth(admin_auth)
     _check_new_mailbox_rate_limit(request)
     app_settings = _current_app_settings(db)
+    _require_domains_configured(app_settings)
     payload = payload or {}
     domain = (payload.get("domain") or configured_primary_domain(app_settings)).lower()
     local_part = payload.get("name")
@@ -392,6 +398,7 @@ def compat_inbox_create(
 ):
     _check_new_mailbox_rate_limit(request)
     app_settings = _current_app_settings(db)
+    _require_domains_configured(app_settings)
     mailbox, token = create_mailbox(
         db,
         domain=configured_primary_domain(app_settings),
@@ -526,6 +533,7 @@ def compat_login(payload: dict = Body(...), db: Session = Depends(get_db)):
 @app.post("/register")
 def compat_register(payload: dict = Body(...), db: Session = Depends(get_db)):
     app_settings = _current_app_settings(db)
+    _require_domains_configured(app_settings)
     if app_settings.get("register", 0) != 0:
         return fail("register disabled", 403)
     email = normalize_address(payload.get("email", ""))
@@ -647,6 +655,7 @@ def compat_account_add(
 ):
     user, _token = _require_login_user(db, authorization)
     app_settings = _current_app_settings(db)
+    _require_domains_configured(app_settings)
     if app_settings.get("addEmail", 0) != 0 or app_settings.get("manyEmail", 0) != 0:
         return fail("add account disabled", 403)
     email = normalize_address(payload.get("email", ""))

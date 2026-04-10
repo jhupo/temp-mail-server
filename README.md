@@ -50,6 +50,7 @@ Admin endpoints are disabled unless `API_MASTER_KEY` is set, and then `x-admin-a
 - `ALLOWED_ROOT_DOMAIN` is kept as a backward-compatible single-domain fallback
 - mailbox creation without an explicit `domain` uses the first domain in `ALLOWED_ROOT_DOMAINS`
 - SMTP recipients are accepted when they match an allowed domain or one of its subdomains
+- default install starts with no public mail domains configured; add them from system settings after signing in as `superadmin / sueradmin`
 
 If SMTP auto-creates a mailbox before you claim it, you can later call `POST /admin/new_address` with the exact address and receive a fresh token for that mailbox.
 

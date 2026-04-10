@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     database_url: str = Field(default="sqlite:///./temp_mail.db", alias="DATABASE_URL")
-    allowed_root_domain: str = Field(default="jhupo.com", alias="ALLOWED_ROOT_DOMAIN")
+    allowed_root_domain: str = Field(default="", alias="ALLOWED_ROOT_DOMAIN")
     allowed_root_domains: str | None = Field(default=None, alias="ALLOWED_ROOT_DOMAINS")
     smtp_host: str = Field(default="0.0.0.0", alias="SMTP_HOST")
     smtp_port: int = Field(default=25, alias="SMTP_PORT")
@@ -51,7 +51,7 @@ class Settings(BaseSettings):
         domains = self.allowed_domains
         if domains:
             return domains[0]
-        return self.allowed_root_domain.lower()
+        return self.allowed_root_domain.lower().strip()
 
     @property
     def frontend_dist_path(self) -> Path:

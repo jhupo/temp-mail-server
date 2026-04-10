@@ -719,15 +719,15 @@ def _apply_all_email_filters(stmt, filters: dict):
 
 DEFAULT_SETTINGS = {
     "title": "Temp Mail",
-    "allowedDomains": settings.allowed_domains,
-    "register": 0,
-    "loginDomain": 0,
+    "allowedDomains": [],
+    "register": 1,
+    "loginDomain": 1,
     "regKey": 1,
-    "addEmail": 0,
-    "manyEmail": 0,
+    "addEmail": 1,
+    "manyEmail": 1,
     "loginOpacity": 1,
     "background": "",
-    "receive": 0,
+    "receive": 1,
     "autoRefresh": 10,
     "send": 1,
     "noRecipient": 1,
@@ -804,7 +804,7 @@ def configured_domains(current: dict) -> list[str]:
         domain = str(item).strip().lower()
         if domain and domain not in domains:
             domains.append(domain)
-    return domains or settings.allowed_domains
+    return domains
 
 
 def configured_primary_domain(current: dict) -> str:
@@ -876,7 +876,7 @@ def ensure_default_admin(db: Session) -> None:
     admin = db.execute(select(User).where(User.username == "superadmin")).scalar_one_or_none()
     if admin is None:
         admin = User(
-            email=f"superadmin@{settings.primary_domain}",
+            email="superadmin@local.invalid",
             username="superadmin",
             password_hash=hash_password("sueradmin"),
             name="superadmin",

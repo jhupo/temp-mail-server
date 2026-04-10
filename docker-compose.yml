@@ -34,7 +34,7 @@ services:
         condition: service_started
     environment:
       DATABASE_URL: postgresql+psycopg://tempmail:tempmail_change_me@postgres:5432/tempmail
-      ALLOWED_ROOT_DOMAINS: jhupo.com,mail.jhupo.com
+      ALLOWED_ROOT_DOMAINS: ""
       MAILBOX_DEFAULT_TTL_MINUTES: 60
       ALLOW_AUTO_CREATE_ON_SMTP: "true"
       API_MASTER_KEY: change_me_long_random_value
@@ -57,7 +57,7 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql+psycopg://tempmail:tempmail_change_me@postgres:5432/tempmail
-      ALLOWED_ROOT_DOMAINS: jhupo.com,mail.jhupo.com
+      ALLOWED_ROOT_DOMAINS: ""
       MAILBOX_DEFAULT_TTL_MINUTES: 60
       ALLOW_AUTO_CREATE_ON_SMTP: "true"
       SMTP_HOST: 0.0.0.0
