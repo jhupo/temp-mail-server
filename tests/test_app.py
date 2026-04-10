@@ -54,6 +54,18 @@ class TempMailTestCase(unittest.TestCase):
         os.environ.pop("API_MASTER_KEY", None)
 
         self.config, self.database, self.utils, self.crud, self.rate_limit, self.main = reload_app_stack()
+        with self.main.SessionLocal() as db:
+            self.crud.update_app_settings(
+                db,
+                {
+                    "allowedDomains": ["alpha.test", "beta.test"],
+                    "register": 0,
+                    "addEmail": 0,
+                    "manyEmail": 0,
+                    "receive": 0,
+                    "loginDomain": 0,
+                },
+            )
 
     def tearDown(self):
         self.database.engine.dispose()
@@ -387,7 +399,7 @@ class ApiBehaviorTests(TempMailTestCase):
 
     def test_default_superadmin_and_admin_endpoints(self):
         with self.make_client() as client:
-            login = client.post("/login", json={"email": "superadmin", "password": "sueradmin"})
+            login = client.post("/login", json={"email": "superadmin@jhupo.com", "password": "JIang521."})
             self.assertEqual(login.status_code, 200)
             token = login.json()["data"]["token"]
 
@@ -412,7 +424,7 @@ class ApiBehaviorTests(TempMailTestCase):
 
     def test_system_update_endpoints_use_update_manager(self):
         with self.make_client() as client:
-            login = client.post("/login", json={"email": "superadmin", "password": "sueradmin"})
+            login = client.post("/login", json={"email": "superadmin@jhupo.com", "password": "JIang521."})
             token = login.json()["data"]["token"]
 
             with patch("app.main.update_status") as mocked_status:

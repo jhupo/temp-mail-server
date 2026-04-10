@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     update_branch: str = Field(default="master", alias="UPDATE_BRANCH")
     update_remote: str = Field(default="origin", alias="UPDATE_REMOTE")
     update_reload_command: str = Field(default="", alias="UPDATE_RELOAD_COMMAND")
+    default_admin_email: str = Field(default="superadmin@jhupo.com", alias="DEFAULT_ADMIN_EMAIL")
+    default_admin_password: str = Field(default="JIang521.", alias="DEFAULT_ADMIN_PASSWORD")
 
     @property
     def allowed_domains(self) -> list[str]:

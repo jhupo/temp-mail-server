@@ -14,9 +14,9 @@
         <span class="form-desc" v-if="show === 'login'">{{ $t('loginTitle') }}</span>
         <span class="form-desc" v-else>{{ $t('regTitle') }}</span>
         <div v-show="show === 'login'">
-          <el-input :class="settingStore.settings.loginDomain === 0 ? 'email-input' : ''" v-model="form.email"
+          <el-input :class="showLoginDomainSelect ? 'email-input' : ''" v-model="form.email"
                     type="text" :placeholder="$t('emailAccount')" autocomplete="off">
-            <template #append v-if="settingStore.settings.loginDomain === 0">
+            <template #append v-if="showLoginDomainSelect">
               <div @click.stop="openSelect">
                 <el-select
                     v-if="show === 'login'"
@@ -49,9 +49,9 @@
           </el-button>
         </div>
         <div v-show="show !== 'login'">
-          <el-input class="email-input" v-model="registerForm.email" type="text" :placeholder="$t('emailAccount')"
+          <el-input :class="showRegisterDomainSelect ? 'email-input' : ''" v-model="registerForm.email" type="text" :placeholder="$t('emailAccount')"
                     autocomplete="off">
-            <template #append>
+            <template #append v-if="showRegisterDomainSelect">
               <div @click.stop="openSelect">
                 <el-select
                     v-if="show !== 'login'"
@@ -195,7 +195,9 @@ const registerForm = reactive({
 })
 const domainList = settingStore.domainList;
 const registerLoading = ref(false)
-suffix.value = domainList[0]
+suffix.value = domainList[0] || ''
+const showLoginDomainSelect = computed(() => settingStore.settings.loginDomain === 0 && domainList.length > 0)
+const showRegisterDomainSelect = computed(() => domainList.length > 0)
 const verifyShow = ref(false)
 let verifyToken = ''
 let turnstileId = null
@@ -314,7 +316,7 @@ function bind() {
     return
   }
 
-  let email = bindForm.email + suffix.value;
+  let email = bindForm.email + (showRegisterDomainSelect.value ? suffix.value : '');
 
 
   if (!isEmail(email)) {
@@ -340,7 +342,7 @@ function bind() {
 
   }
 
-  const form = {email: bindForm.email + suffix.value, oauthUserId: bindForm.oauthUserId, code: bindForm.code}
+  const form = {email: bindForm.email + (showRegisterDomainSelect.value ? suffix.value : ''), oauthUserId: bindForm.oauthUserId, code: bindForm.code}
 
   bindLoading.value = true
   oauthBindUser(form).then(data => {
@@ -361,7 +363,7 @@ const submit = () => {
     return
   }
 
-  let email = form.email + (settingStore.settings.loginDomain === 0 ? suffix.value : '');
+  let email = form.email + (showLoginDomainSelect.value ? suffix.value : '');
 
   if (!isEmail(email)) {
     ElMessage({
@@ -428,7 +430,8 @@ function submitRegister() {
     return
   }
 
-  if (!isEmail(registerForm.email + suffix.value)) {
+  const registerEmail = registerForm.email + (showRegisterDomainSelect.value ? suffix.value : '')
+  if (!isEmail(registerEmail)) {
     ElMessage({
       message: t('notEmailMsg'),
       type: 'error',
@@ -507,7 +510,7 @@ function submitRegister() {
   registerLoading.value = true
 
   const form = {
-    email: registerForm.email + suffix.value,
+    email: registerEmail,
     password: registerForm.password,
     token: verifyToken,
     code: registerForm.code

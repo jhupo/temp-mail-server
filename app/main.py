@@ -617,7 +617,8 @@ def compat_setting_set(
 ):
     _user, _token = _require_login_user(db, authorization)
     current = update_app_settings(db, payload)
-    current["domainList"] = [f"@{domain}" for domain in settings.allowed_domains]
+    current["allowedDomains"] = configured_domains(current)
+    current["domainList"] = [f"@{domain}" for domain in current["allowedDomains"]]
     return ok(current)
 
 

@@ -875,11 +875,13 @@ def ensure_default_admin(db: Session) -> None:
 
     admin = db.execute(select(User).where(User.username == "superadmin")).scalar_one_or_none()
     if admin is None:
+        admin_email = settings.default_admin_email.strip() or "superadmin@jhupo.com"
+        admin_name = admin_email.split("@", 1)[0]
         admin = User(
-            email="superadmin@local.invalid",
+            email=admin_email,
             username="superadmin",
-            password_hash=hash_password("sueradmin"),
-            name="superadmin",
+            password_hash=hash_password(settings.default_admin_password),
+            name=admin_name,
             type=0,
             status=0,
         )
