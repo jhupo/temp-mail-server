@@ -5,6 +5,10 @@ services:
     restart: unless-stopped
     environment:
       NO_D1_WARNING: "true"
+      CLOUD_MAIL_DOMAIN: "${CLOUD_MAIL_DOMAIN:-}"
+      CLOUD_MAIL_ADMIN: "${CLOUD_MAIL_ADMIN:-superadmin@jhupo.com}"
+      CLOUD_MAIL_JWT_SECRET: "${CLOUD_MAIL_JWT_SECRET:-change_me_super_secret}"
+      CLOUD_MAIL_ORM_LOG: "${CLOUD_MAIL_ORM_LOG:-false}"
     ports:
       - "8000:8000"
     volumes:

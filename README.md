@@ -20,6 +20,7 @@ The target direction is:
 ## Quick start
 
 ```bash
+cp .env.example .env
 docker compose up -d --build
 ```
 
@@ -28,6 +29,17 @@ Open:
 ```text
 http://127.0.0.1:8000
 ```
+
+## Environment
+
+The Docker entrypoint injects runtime values into `mail-worker/wrangler-vps.toml`.
+
+Available variables:
+
+- `CLOUD_MAIL_DOMAIN` comma-separated public mail domains
+- `CLOUD_MAIL_ADMIN` admin account email
+- `CLOUD_MAIL_JWT_SECRET` JWT signing secret
+- `CLOUD_MAIL_ORM_LOG` enable ORM logging (`true` / `false`)
 
 ## Current note
 
