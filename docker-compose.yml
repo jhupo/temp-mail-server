@@ -1,71 +1,14 @@
 services:
-  postgres:
-    image: postgres:16
-    container_name: tempmail-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: tempmail
-      POSTGRES_USER: tempmail
-      POSTGRES_PASSWORD: tempmail_change_me
-    volumes:
-      - pg_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tempmail -d tempmail"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
-  redis:
-    image: redis:7-alpine
-    container_name: tempmail-redis
-    restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
-    volumes:
-      - redis_data:/data
-
-  api:
+  cloud-mail:
     build: .
-    container_name: tempmail-api
+    container_name: cloud-mail-vps
     restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
     environment:
-      DATABASE_URL: postgresql+psycopg://tempmail:tempmail_change_me@postgres:5432/tempmail
-      ALLOWED_ROOT_DOMAINS: ""
-      MAILBOX_DEFAULT_TTL_MINUTES: 60
-      ALLOW_AUTO_CREATE_ON_SMTP: "true"
-      API_MASTER_KEY: change_me_long_random_value
-      REDIS_URL: redis://redis:6379/0
-      RATE_LIMIT_NEW_PER_MINUTE: 30
-      API_HOST: 0.0.0.0
-      API_PORT: 8000
-      SMTP_HOST: 0.0.0.0
-      SMTP_PORT: 25
+      NO_D1_WARNING: "true"
     ports:
       - "8000:8000"
-    command: ["python", "-m", "app.main"]
-
-  smtp:
-    build: .
-    container_name: tempmail-smtp
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgresql+psycopg://tempmail:tempmail_change_me@postgres:5432/tempmail
-      ALLOWED_ROOT_DOMAINS: ""
-      MAILBOX_DEFAULT_TTL_MINUTES: 60
-      ALLOW_AUTO_CREATE_ON_SMTP: "true"
-      SMTP_HOST: 0.0.0.0
-      SMTP_PORT: 25
-    ports:
-      - "25:25"
-    command: ["python", "-m", "app.smtp_server"]
+    volumes:
+      - cloud_mail_data:/data
 
 volumes:
-  pg_data:
-  redis_data:
+  cloud_mail_data:
