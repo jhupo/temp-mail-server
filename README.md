@@ -73,25 +73,55 @@ If you are migrating an existing database that was created before `ix_mailboxes_
 
 ## Frontend UI
 
-This repo now includes a trimmed Vue 3 frontend under `frontend/` using the visual style and layout approach from `maillab/cloud-mail`, adapted to this backend's actual API surface.
+This repo now vendors the `mail-vue` frontend from `maillab/cloud-mail` under `frontend/` and adapts the backend API toward its core inbox/account workflow.
 
-Supported UI capabilities:
+Currently aligned core UI flows:
 
-- create random mailbox
-- create custom mailbox when `API_MASTER_KEY` is available
-- switch between saved mailbox tokens
-- poll and list mailbox messages
-- open message details with HTML / text / raw tabs
+- register / login
+- account list and add account
+- inbox list / latest polling
+- message detail
+- starred list
+- profile settings
 
 Frontend dev/build:
 
 ```bash
 cd frontend
 npm install
+npm run dev
 npm run build
 ```
 
 When `frontend/dist` exists, FastAPI serves it from `/`.
+
+## TLS Certificate Automation
+
+This repo includes Linux host scripts for Let's Encrypt via Certbot webroot mode:
+
+- `deploy/certbot/issue-cert.sh`
+- `deploy/certbot/renew-cert.sh`
+
+Required host assumptions:
+
+- Nginx serves `/.well-known/acme-challenge/` from the configured webroot
+- `certbot` is installed on the host
+- the app process has permission to invoke the scripts
+
+Settings now exposed to the UI / API:
+
+- `certDomain`
+- `certEmail`
+- `certAutoRenew`
+- `certStatus`
+- `certLastResult`
+- `certLastRunAt`
+
+Certificate endpoints:
+
+- `GET /cert/status`
+- `POST /cert/apply`
+- `POST /cert/renew`
 
 ## Typical Flow
 

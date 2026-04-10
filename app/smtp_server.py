@@ -6,7 +6,8 @@ from aiosmtpd.controller import Controller
 from aiosmtpd.smtp import Envelope, Session
 
 from app.config import settings
-from app.crud import save_incoming_message
+from app.mailer import send_via_smtp
+from app.crud import configured_domains, get_app_settings, save_incoming_message
 from app.database import SessionLocal, init_db
 from app.utils import is_allowed_domain, normalize_address, split_address
 
@@ -69,6 +70,63 @@ def _extract_bodies(raw_content: bytes, max_chars: int) -> tuple[str | None, str
     return text_body, html_body, raw_headers
 
 
+def _split_csv(value: str | None) -> list[str]:
+    return [item.strip() for item in (value or "").split(",") if item.strip()]
+
+
+def _forward_targets(app_settings: dict, recipient_address: str) -> list[str]:
+    if app_settings.get("forwardStatus", 1) != 0:
+        return []
+    recipients = _split_csv(app_settings.get("forwardEmail"))
+    if not recipients:
+        return []
+    if app_settings.get("ruleType", 0) == 0:
+        return recipients
+    allowed_rules = {item.lower() for item in _split_csv(app_settings.get("ruleEmail"))}
+    if recipient_address.lower() not in allowed_rules:
+        return []
+    return recipients
+
+
+def _domain_allowed(app_settings: dict, domain: str) -> bool:
+    normalized = domain.lower()
+    for root in configured_domains(app_settings):
+        if normalized == root or normalized.endswith(f".{root}"):
+            return True
+    return False
+
+
+def _forward_message_if_needed(
+    app_settings: dict,
+    *,
+    recipient_address: str,
+    from_addr: str | None,
+    subject: str | None,
+    text_body: str | None,
+    html_body: str | None,
+) -> None:
+    targets = _forward_targets(app_settings, recipient_address)
+    if not targets:
+        return
+    smtp_host = (app_settings.get("smtpHost") or "").strip()
+    if not smtp_host:
+        return
+    send_via_smtp(
+        smtp_host=smtp_host,
+        smtp_port=int(app_settings.get("smtpPort") or 587),
+        smtp_username=(app_settings.get("smtpUsername") or "").strip() or None,
+        smtp_password=app_settings.get("smtpPassword") or None,
+        smtp_use_tls=bool(app_settings.get("smtpUseTls", True)),
+        smtp_use_ssl=bool(app_settings.get("smtpUseSsl", False)),
+        from_email=(app_settings.get("smtpFromEmail") or recipient_address).strip(),
+        to_emails=targets,
+        subject=subject or "",
+        text_body=text_body,
+        html_body=html_body,
+        attachments=None,
+    )
+
+
 class TempMailSMTPHandler:
     async def handle_RCPT(self, server, session: Session, envelope: Envelope, address: str, rcpt_options):
         address = normalize_address(address)
@@ -76,7 +134,14 @@ class TempMailSMTPHandler:
             _, domain = split_address(address)
         except ValueError:
             return "550 invalid recipient"
-        if not is_allowed_domain(domain):
+        db = SessionLocal()
+        try:
+            app_settings = get_app_settings(db)
+        finally:
+            db.close()
+        if app_settings.get("receive", 0) != 0:
+            return "550 receive disabled"
+        if not _domain_allowed(app_settings, domain):
             return "550 domain not allowed"
         envelope.rcpt_tos.append(address)
         return "250 OK"
@@ -94,8 +159,9 @@ class TempMailSMTPHandler:
 
         db = SessionLocal()
         try:
+            app_settings = get_app_settings(db)
             for recipient in envelope.rcpt_tos:
-                save_incoming_message(
+                result = save_incoming_message(
                     db,
                     recipient=recipient,
                     from_addr=from_addr,
@@ -104,6 +170,18 @@ class TempMailSMTPHandler:
                     html_body=html_body,
                     raw_headers=raw_headers,
                 )
+                if result is not None:
+                    try:
+                        _forward_message_if_needed(
+                            app_settings,
+                            recipient_address=recipient,
+                            from_addr=from_addr,
+                            subject=subject,
+                            text_body=text_body,
+                            html_body=html_body,
+                        )
+                    except Exception as exc:
+                        print(f"forward failed for {recipient}: {exc}")
         finally:
             db.close()
 

@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     rate_limit_new_per_minute: int = Field(default=30, alias="RATE_LIMIT_NEW_PER_MINUTE")
     cleanup_interval_seconds: int = Field(default=60, alias="CLEANUP_INTERVAL_SECONDS")
     frontend_dist_dir: str = Field(default="frontend/dist", alias="FRONTEND_DIST_DIR")
+    object_storage_dir: str = Field(default="storage/objects", alias="OBJECT_STORAGE_DIR")
+    certbot_webroot_dir: str = Field(default="storage/certbot-webroot", alias="CERTBOT_WEBROOT_DIR")
+    certbot_scripts_dir: str = Field(default="deploy/certbot", alias="CERTBOT_SCRIPTS_DIR")
+    certbot_reload_command: str = Field(default="nginx -s reload", alias="CERTBOT_RELOAD_COMMAND")
+    cert_renew_check_seconds: int = Field(default=43200, alias="CERT_RENEW_CHECK_SECONDS")
 
     @property
     def allowed_domains(self) -> list[str]:
@@ -47,6 +52,18 @@ class Settings(BaseSettings):
     @property
     def frontend_dist_path(self) -> Path:
         return Path(self.frontend_dist_dir)
+
+    @property
+    def object_storage_path(self) -> Path:
+        return Path(self.object_storage_dir)
+
+    @property
+    def certbot_webroot_path(self) -> Path:
+        return Path(self.certbot_webroot_dir)
+
+    @property
+    def certbot_scripts_path(self) -> Path:
+        return Path(self.certbot_scripts_dir)
 
 
 settings = Settings()
