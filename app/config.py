@@ -1,5 +1,6 @@
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pathlib import Path
 
 
 class Settings(BaseSettings):
@@ -19,6 +20,7 @@ class Settings(BaseSettings):
     redis_url: str | None = Field(default=None, alias="REDIS_URL")
     rate_limit_new_per_minute: int = Field(default=30, alias="RATE_LIMIT_NEW_PER_MINUTE")
     cleanup_interval_seconds: int = Field(default=60, alias="CLEANUP_INTERVAL_SECONDS")
+    frontend_dist_dir: str = Field(default="frontend/dist", alias="FRONTEND_DIST_DIR")
 
     @property
     def allowed_domains(self) -> list[str]:
@@ -41,6 +43,10 @@ class Settings(BaseSettings):
         if domains:
             return domains[0]
         return self.allowed_root_domain.lower()
+
+    @property
+    def frontend_dist_path(self) -> Path:
+        return Path(self.frontend_dist_dir)
 
 
 settings = Settings()

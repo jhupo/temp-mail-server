@@ -31,6 +31,10 @@ Health:
 
 - `GET /healthz`
 
+Frontend:
+
+- `GET /`
+
 ## Auth Rules
 
 - Admin endpoints use `x-admin-auth`
@@ -66,6 +70,28 @@ alembic revision -m "describe change"
 ```
 
 If you are migrating an existing database that was created before `ix_mailboxes_token_hash` existed, apply the Alembic migration path instead of creating the index manually.
+
+## Frontend UI
+
+This repo now includes a trimmed Vue 3 frontend under `frontend/` using the visual style and layout approach from `maillab/cloud-mail`, adapted to this backend's actual API surface.
+
+Supported UI capabilities:
+
+- create random mailbox
+- create custom mailbox when `API_MASTER_KEY` is available
+- switch between saved mailbox tokens
+- poll and list mailbox messages
+- open message details with HTML / text / raw tabs
+
+Frontend dev/build:
+
+```bash
+cd frontend
+npm install
+npm run build
+```
+
+When `frontend/dist` exists, FastAPI serves it from `/`.
 
 ## Typical Flow
 

@@ -1,0 +1,76 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  scrollbar-width: thin;
+  scrollbar-color: var(--dark-border) transparent;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  font-family: -apple-system, Inter, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
+    Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+  background: var(--el-bg-color);
+}
+
+:root {
+  --el-color-primary: #1890ff;
+  --el-color-primary-dark-2: #1064c0;
+  --el-color-primary-light-3: #4dabff;
+  --el-color-primary-light-5: #69c0ff;
+  --el-color-primary-light-7: #91d5ff;
+  --el-color-primary-light-9: #e6f7ff;
+  --extra-light-fill: #fafcff;
+  --light-ill: #f5f7fa;
+  --light-border: #e4e7ed;
+  --header-actions-border: inset 0 -1px 0 0 var(--el-border-color-lighter);
+  --aside-backgound: #001529;
+  --loadding-background: rgba(255, 255, 255, 0.8);
+  --dark-border: #cdd0d6;
+  --base-fill: #f0f2f5;
+  --regular-text-color: #585d69;
+  --light-border-color: #e7e9ec;
+  --aside-right-border: 3px 0 5px rgba(0, 21, 41, 0.35);
+  --choose-account-background: var(--el-color-primary-light-9);
+  --el-text-color-regular: var(--el-text-color-primary);
+  --email-scroll-content-color: rgba(25, 41, 59, 0.4);
+  --email-hover-background: #f2f6fc;
+  --secondary-text-color: #909399;
+}
+
+html.dark {
+  --extra-light-fill: #191919;
+  --light-ill: #262727;
+  --light-border: #414243;
+  --aside-backgound: #141414;
+  --header-actions-border: inset 0 -1px 0 0 var(--el-border-color-lighter);
+  --loadding-background: rgba(0, 0, 0, 0.3);
+  --dark-border: #636466;
+  --base-fill: #303030;
+  --regular-text-color: #bfbdbc;
+  --light-border-color: #414243;
+  --aside-right-border: 3px 0 5px #0a0a0a;
+  --choose-account-background: #39393a;
+  --email-scroll-content-color: rgba(255, 255, 255, 0.3);
+  --email-hover-background: #1d1e1f;
+  --secondary-text-color: #a3a6ad;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+pre {
+  font-family: inherit;
+}

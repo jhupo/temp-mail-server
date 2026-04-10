@@ -3,6 +3,8 @@ import threading
 
 import uvicorn
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -294,6 +296,31 @@ def compat_user_mail_detail_token(
     if message is None:
         raise HTTPException(status_code=404, detail="mail not found")
     return _serialize_message(message, address=mailbox.address)
+
+
+frontend_dist = settings.frontend_dist_path
+frontend_index = frontend_dist / "index.html"
+if frontend_dist.exists():
+    assets_dir = frontend_dist / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="frontend-assets")
+
+    @app.get("/", include_in_schema=False)
+    def frontend_root():
+        if frontend_index.exists():
+            return FileResponse(frontend_index)
+        raise HTTPException(status_code=404, detail="frontend not built")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def frontend_spa(full_path: str):
+        if full_path.startswith(("admin/", "api/", "user_api/", "inbox", "healthz")):
+            raise HTTPException(status_code=404, detail="not found")
+        requested = frontend_dist / full_path
+        if requested.exists() and requested.is_file():
+            return FileResponse(requested)
+        if frontend_index.exists():
+            return FileResponse(frontend_index)
+        raise HTTPException(status_code=404, detail="frontend not built")
 
 
 def run_api() -> None:
