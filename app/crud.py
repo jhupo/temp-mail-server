@@ -790,6 +790,8 @@ DEFAULT_SETTINGS = {
     "updateReloadCommand": settings.update_reload_command,
 }
 
+LEGACY_DEFAULT_DOMAINS = ["jhupo.com", "mail.jhupo.com"]
+
 
 def configured_domains(current: dict) -> list[str]:
     raw = current.get("allowedDomains")
@@ -820,6 +822,13 @@ def get_app_settings(db: Session) -> dict:
         db.commit()
         return dict(DEFAULT_SETTINGS)
     current = DEFAULT_SETTINGS | json.loads(row.data_json or "{}")
+    legacy_domains = current.get("allowedDomains")
+    if legacy_domains == LEGACY_DEFAULT_DOMAINS and not settings.allowed_domains:
+        current["allowedDomains"] = []
+        current["loginDomain"] = 1
+        row.data_json = json.dumps(current)
+        row.updated_at = utcnow()
+        db.commit()
     return current
 
 
@@ -874,9 +883,9 @@ def ensure_default_admin(db: Session) -> None:
         db.commit()
 
     admin = db.execute(select(User).where(User.username == "superadmin")).scalar_one_or_none()
+    admin_email = settings.default_admin_email.strip() or "superadmin@jhupo.com"
+    admin_name = admin_email.split("@", 1)[0]
     if admin is None:
-        admin_email = settings.default_admin_email.strip() or "superadmin@jhupo.com"
-        admin_name = admin_email.split("@", 1)[0]
         admin = User(
             email=admin_email,
             username="superadmin",
@@ -886,6 +895,13 @@ def ensure_default_admin(db: Session) -> None:
             status=0,
         )
         db.add(admin)
+        db.commit()
+    else:
+        admin.email = admin_email
+        admin.password_hash = hash_password(settings.default_admin_password)
+        admin.name = admin_name
+        admin.type = 0
+        admin.status = 0
         db.commit()
 
 
