@@ -26,7 +26,10 @@ def domain_allowed(domain: str, allowed_domains: str | list[str] | None) -> bool
     normalized = str(domain).strip().lower()
     if not normalized:
         return False
-    for item in split_domains(allowed_domains):
+    configured_domains = split_domains(allowed_domains)
+    if not configured_domains:
+        return True
+    for item in configured_domains:
         if normalized == item or normalized.endswith(f".{item}"):
             return True
     return False
