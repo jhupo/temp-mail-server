@@ -74,7 +74,7 @@
               <div class="setting-item">
                 <div><span>{{ $t('availableDomains') }}</span></div>
                 <div>
-                  <span>{{ setting.allowedDomains?.length || 0 }} {{ $t('total') }}</span>
+                  <span>{{ (setting.allowedDomains || []).join(', ') || '-' }}</span>
                   <el-button class="opt-button" style="margin-top: 0" @click="openAllowedDomainForm" size="small" type="primary">
                     <Icon icon="material-symbols:add-rounded" width="16" height="16"/>
                   </el-button>
