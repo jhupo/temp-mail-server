@@ -1,3 +1,7 @@
-freeloader.xyz, mail.freeloader.xyz {
+freeloader.xyz {
+    redir https://mail.freeloader.xyz{uri}
+}
+
+mail.freeloader.xyz {
     reverse_proxy tempmail-api:8000
 }
