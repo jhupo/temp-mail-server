@@ -69,10 +69,6 @@ def _get_setting(db: Session) -> Setting:
         db.add(setting)
         db.commit()
         db.refresh(setting)
-    elif env_domains and not _split_domains(setting.allowed_domains):
-        setting.allowed_domains = json.dumps(env_domains)
-        db.commit()
-        db.refresh(setting)
     return setting
 
 
