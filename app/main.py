@@ -3,11 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
-import smtplib
-import ssl
 from contextlib import asynccontextmanager
 from datetime import datetime
-from email.message import EmailMessage
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -17,7 +14,9 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import Base, SessionLocal, engine
+from app.domain_utils import domain_allowed, split_domains
 from app.models import Account, IncomingEmail, RegKey, RegKeyUser, Role, Setting, User, UserSession
+from app.outbound_mail import send_outbound_email, smtp_relay_enabled, direct_mx_enabled
 from app.redis_client import get_redis
 
 
@@ -30,34 +29,6 @@ def _hash_password(password: str) -> str:
     return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 120000).hex()
 
 
-def _split_domains(raw: str | list[str] | None) -> list[str]:
-    if isinstance(raw, list):
-        items = raw
-    elif isinstance(raw, str):
-        try:
-            items = json.loads(raw) if raw.startswith("[") else raw.split(",")
-        except Exception:
-            items = raw.split(",")
-    else:
-        items = []
-    domains: list[str] = []
-    for item in items:
-        value = str(item).strip().lower()
-        if value and value not in domains:
-            domains.append(value)
-    return domains
-
-
-def _domain_allowed(domain: str, allowed_domains: str | list[str] | None) -> bool:
-    normalized = str(domain).strip().lower()
-    if not normalized:
-        return False
-    for item in _split_domains(allowed_domains):
-        if normalized == item or normalized.endswith(f".{item}"):
-            return True
-    return False
-
-
 def get_db():
     db = SessionLocal()
     try:
@@ -67,7 +38,7 @@ def get_db():
 
 
 def _get_setting(db: Session) -> Setting:
-    env_domains = _split_domains(settings.cloud_mail_domain)
+    env_domains = split_domains(settings.cloud_mail_domain)
     setting = db.execute(select(Setting).where(Setting.id == 1)).scalar_one_or_none()
     if setting is None:
         setting = Setting(
@@ -83,7 +54,7 @@ def _get_setting(db: Session) -> Setting:
 
 
 def _setting_payload(setting: Setting) -> dict:
-    domain_list = [f"@{domain}" for domain in _split_domains(setting.allowed_domains)]
+    domain_list = [f"@{domain}" for domain in split_domains(setting.allowed_domains)]
     return {
         "title": setting.title,
         "register": setting.register,
@@ -116,7 +87,7 @@ def _setting_payload(setting: Setting) -> dict:
         "linuxdoSwitch": False,
         "minEmailPrefix": setting.min_email_prefix,
         "projectLink": bool(setting.project_link),
-        "allowedDomains": _split_domains(setting.allowed_domains),
+        "allowedDomains": split_domains(setting.allowed_domains),
         "smtpHost": settings.smtp_out_host,
         "smtpPort": settings.smtp_out_port,
         "smtpUsername": settings.smtp_out_username,
@@ -124,12 +95,12 @@ def _setting_payload(setting: Setting) -> dict:
         "smtpUseTls": settings.smtp_out_use_tls,
         "smtpUseSsl": settings.smtp_out_use_ssl,
         "smtpFromEmail": settings.smtp_out_from_email,
-        "sendMode": "smtp" if _smtp_enabled() else "record",
+        "sendMode": "smtp" if smtp_relay_enabled() else ("direct-mx" if direct_mx_enabled() else "record"),
     }
 
 
 def _primary_domain(setting: Setting) -> str:
-    domains = _split_domains(setting.allowed_domains)
+    domains = split_domains(setting.allowed_domains)
     return domains[0] if domains else ""
 
 
@@ -163,45 +134,6 @@ def _ok(data=None):
 
 def _fail(message: str, code: int = 500):
     return {"code": code, "message": message}
-
-
-def _smtp_enabled() -> bool:
-    return bool(settings.smtp_out_host and settings.smtp_out_from_email)
-
-
-def _send_outbound_email(sender_email: str, recipients: list[str], subject: str, text_body: str, html_body: str) -> None:
-    if not _smtp_enabled():
-        raise RuntimeError("outbound smtp is not configured")
-
-    message = EmailMessage()
-    message["From"] = settings.smtp_out_from_email or sender_email
-    message["To"] = ", ".join(recipients)
-    message["Subject"] = subject
-    message["Reply-To"] = sender_email
-
-    if html_body and text_body:
-        message.set_content(text_body)
-        message.add_alternative(html_body, subtype="html")
-    elif html_body:
-        message.set_content(html_body, subtype="html")
-    else:
-        message.set_content(text_body or "")
-
-    if settings.smtp_out_use_ssl:
-        with smtplib.SMTP_SSL(settings.smtp_out_host, settings.smtp_out_port, timeout=30, context=ssl.create_default_context()) as server:
-            if settings.smtp_out_username:
-                server.login(settings.smtp_out_username, settings.smtp_out_password)
-            server.send_message(message)
-        return
-
-    with smtplib.SMTP(settings.smtp_out_host, settings.smtp_out_port, timeout=30) as server:
-        server.ehlo()
-        if settings.smtp_out_use_tls:
-            server.starttls(context=ssl.create_default_context())
-            server.ehlo()
-        if settings.smtp_out_username:
-            server.login(settings.smtp_out_username, settings.smtp_out_password)
-        server.send_message(message)
 
 
 def _perm_keys(user: User) -> list[str]:
@@ -423,7 +355,7 @@ def register(payload: dict = Body(...), db: Session = Depends(get_db)):
     local_part, domain = email.split("@", 1)
     if len(local_part) < max(setting.min_email_prefix, 1):
         return _fail("email prefix too short", 400)
-    if not _domain_allowed(domain, setting.allowed_domains):
+    if not domain_allowed(domain, setting.allowed_domains):
         return _fail("domain not allowed", 400)
     if _user_by_email(db, email):
         return _fail("account already exists", 400)
@@ -536,7 +468,7 @@ def setting_set(payload: dict = Body(...), db: Session = Depends(get_db), author
                 value = int(float(value) * 100)
             setattr(setting, attr, value)
     if "allowedDomains" in payload:
-        setting.allowed_domains = json.dumps(_split_domains(payload["allowedDomains"]))
+        setting.allowed_domains = json.dumps(split_domains(payload["allowedDomains"]))
     db.commit()
     db.refresh(setting)
     return _ok(_setting_payload(setting))
@@ -552,7 +484,7 @@ def account_add(payload: dict = Body(...), db: Session = Depends(get_db), author
     if not email or "@" not in email:
         return _fail("invalid email", 400)
     local_part, domain = email.split("@", 1)
-    if not _domain_allowed(domain, setting.allowed_domains):
+    if not domain_allowed(domain, setting.allowed_domains):
         return _fail("domain not allowed", 400)
     if len(local_part) < max(setting.min_email_prefix, 1):
         return _fail("email prefix too short", 400)
@@ -1041,9 +973,9 @@ def email_send(payload: dict = Body(...), db: Session = Depends(get_db), authori
     html_body = payload.get("content") or ""
     status = 2
 
-    if _smtp_enabled():
+    if smtp_relay_enabled() or direct_mx_enabled():
         try:
-            _send_outbound_email(account.email, recipients, subject, text_body, html_body)
+            send_outbound_email(account.email, recipients, subject, text_body, html_body)
         except Exception as exc:
             status = 7
             row = IncomingEmail(

@@ -71,6 +71,20 @@
                   </el-button>
                 </div>
               </div>
+              <div class="setting-item">
+                <div>
+                  <span>{{ $t('availableDomains') }}</span>
+                  <el-tooltip effect="dark" :content="$t('availableDomainsDesc')">
+                    <Icon class="warning" icon="fe:warning" width="18" height="18"/>
+                  </el-tooltip>
+                </div>
+                <div class="forward">
+                  <span>{{ rootDomainList.join(', ') || '-' }}</span>
+                  <el-button class="opt-button" size="small" type="primary" @click="openAllowedDomains">
+                    <Icon icon="fluent:settings-48-regular" width="18" height="18"/>
+                  </el-button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -728,6 +742,11 @@
         </div>
         <el-button type="primary" style="width: 100%;" :loading="settingLoading" @click="saveEmailPrefix">{{ $t('save') }}</el-button>
       </el-dialog>
+      <el-dialog v-model="allowedDomainsShow" :title="t('availableDomains')" @closed="resetAllowedDomains">
+        <div style="margin-bottom: 10px;">{{ t('availableDomainsDesc') }}</div>
+        <el-input-tag v-model="rootDomainList" :placeholder="t('domainDesc')" />
+        <el-button type="primary" style="width: 100%; margin-top: 15px;" :loading="settingLoading" @click="saveAllowedDomains">{{ $t('save') }}</el-button>
+      </el-dialog>
     </el-scrollbar>
   </div>
 </template>
@@ -772,6 +791,7 @@ const noticePopupShow = ref(false)
 const thirdEmailShow = ref(false)
 const forwardRulesShow = ref(false)
 const emailPrefixShow = ref(false)
+const allowedDomainsShow = ref(false)
 const showResendList = ref(false)
 const settingStore = useSettingStore();
 const uiStore = useUiStore();
@@ -784,6 +804,7 @@ const loginOpacity = ref(0)
 const minEmailPrefix = ref(0)
 const emailPrefixFilter = ref([])
 const backgroundUrl = ref('')
+const rootDomainList = ref([])
 let backgroundFile = {}
 const showSetBackground = ref(false)
 let regVerifyCount = ref(1)
@@ -871,6 +892,7 @@ function getSettings() {
     r2DomainInput.value = setting.value.r2Domain
     addVerifyCount.value = setting.value.addVerifyCount
     regVerifyCount.value = setting.value.regVerifyCount
+    rootDomainList.value = [...(setting.value.allowedDomains || [])]
     resetNoticeForm()
     resetAddS3Form()
     resetEmailPrefix()
@@ -1025,6 +1047,11 @@ function openEmailPrefix() {
   emailPrefixShow.value = true
 }
 
+function openAllowedDomains() {
+  rootDomainList.value = [...(setting.value.allowedDomains || [])]
+  allowedDomainsShow.value = true
+}
+
 function openForwardRules() {
   ruleType.value = setting.value.ruleType
   ruleEmail.value = []
@@ -1153,6 +1180,15 @@ function saveEmailPrefix() {
   form.minEmailPrefix = minEmailPrefix.value
   form.emailPrefixFilter = emailPrefixFilter.value
   editSetting(form, true)
+}
+
+function resetAllowedDomains() {
+  rootDomainList.value = [...(setting.value.allowedDomains || [])]
+}
+
+function saveAllowedDomains() {
+  const cleaned = rootDomainList.value.map(item => item.trim().toLowerCase()).filter(Boolean)
+  editSetting({allowedDomains: cleaned}, true)
 }
 
 const opacityChange = debounce(doOpacityChange, 1000, {
@@ -1322,6 +1358,7 @@ function editSetting(settingForm, refreshStatus = true) {
     noticePopupShow.value = false
     addS3Show.value = false
     emailPrefixShow.value = false
+    allowedDomainsShow.value = false
   }).catch((e) => {
     loginOpacity.value = setting.value.loginOpacity
     setting.value = {...setting.value, ...JSON.parse(backup)}
