@@ -54,15 +54,20 @@ def get_db():
 
 
 def _get_setting(db: Session) -> Setting:
+    env_domains = _split_domains(settings.cloud_mail_domain)
     setting = db.execute(select(Setting).where(Setting.id == 1)).scalar_one_or_none()
     if setting is None:
         setting = Setting(
             id=1,
             title="Temp Mail",
             login_domain=1,
-            allowed_domains=json.dumps(_split_domains(settings.cloud_mail_domain)),
+            allowed_domains=json.dumps(env_domains),
         )
         db.add(setting)
+        db.commit()
+        db.refresh(setting)
+    elif env_domains and not _split_domains(setting.allowed_domains):
+        setting.allowed_domains = json.dumps(env_domains)
         db.commit()
         db.refresh(setting)
     return setting
