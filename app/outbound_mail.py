@@ -8,6 +8,7 @@ from pathlib import Path
 
 import dns.resolver
 import dkim
+import httpx
 
 from app.config import settings
 
@@ -20,7 +21,14 @@ def direct_mx_enabled() -> bool:
     return bool(settings.direct_send_enabled and settings.direct_helo_host and settings.dkim_selector and settings.dkim_private_key_path and settings.dkim_domain)
 
 
-def send_outbound_email(sender_email: str, recipients: list[str], subject: str, text_body: str, html_body: str) -> None:
+def resend_enabled(token: str | None) -> bool:
+    return bool((token or "").strip())
+
+
+def send_outbound_email(sender_email: str, recipients: list[str], subject: str, text_body: str, html_body: str, resend_token: str | None = None) -> None:
+    if resend_enabled(resend_token):
+        send_via_resend(resend_token or "", sender_email, recipients, subject, text_body, html_body)
+        return
     if smtp_relay_enabled():
         send_via_smtp_relay(sender_email, recipients, subject, text_body, html_body)
         return
@@ -28,6 +36,21 @@ def send_outbound_email(sender_email: str, recipients: list[str], subject: str, 
         send_via_direct_mx(sender_email, recipients, subject, text_body, html_body)
         return
     raise RuntimeError("no outbound delivery method is configured")
+
+
+def send_via_resend(token: str, sender_email: str, recipients: list[str], subject: str, text_body: str, html_body: str) -> None:
+    payload = {"from": sender_email, "to": recipients, "subject": subject}
+    if text_body:
+        payload["text"] = text_body
+    if html_body:
+        payload["html"] = html_body
+    with httpx.Client(timeout=30.0) as client:
+        response = client.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json=payload,
+        )
+        response.raise_for_status()
 
 
 def build_message(sender_email: str, recipients: list[str], subject: str, text_body: str, html_body: str) -> EmailMessage:

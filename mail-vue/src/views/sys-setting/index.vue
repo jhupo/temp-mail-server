@@ -91,6 +91,21 @@
             <el-tag>{{ setting.sendMode || 'record' }}</el-tag>
           </div>
 
+          <label class="row">
+            <span>{{ $t('resendToken') }}</span>
+            <div class="inline">
+              <el-input v-model="resendTokenInput" :placeholder="$t('addResendTokenDesc')" show-password />
+              <el-button type="primary" @click="saveResendToken" :loading="saving">{{ $t('save') }}</el-button>
+            </div>
+          </label>
+
+          <div class="row readonly">
+            <span>Resend</span>
+            <el-tag :type="setting.resendConfigured ? 'success' : 'info'">
+              {{ setting.resendConfigured ? $t('enabled') : $t('disabled') }}
+            </el-tag>
+          </div>
+
           <div class="row readonly" v-if="setting.sendMode === 'smtp'">
             <span>SMTP Host</span>
             <code>{{ setting.smtpHost || '-' }}</code>
@@ -153,6 +168,7 @@ const titleInput = ref('')
 const domainInputs = ref([])
 const minEmailPrefix = ref(1)
 const loginOpacity = ref(1)
+const resendTokenInput = ref('')
 
 getSettings()
 
@@ -205,6 +221,10 @@ function saveDisplay() {
     loginOpacity: loginOpacity.value,
     notice: setting.value.notice,
   })
+}
+
+function saveResendToken() {
+  savePatch({ resendToken: resendTokenInput.value })
 }
 </script>
 

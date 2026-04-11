@@ -73,6 +73,7 @@ class Setting(Base):
     min_email_prefix: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     project_link: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     allowed_domains: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    resend_token: Mapped[str] = mapped_column(Text, default="", nullable=False)
 
 
 class IncomingEmail(Base):

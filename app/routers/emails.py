@@ -6,9 +6,9 @@ from fastapi import APIRouter, Body, Depends, Header, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api_common import email_payload, fail, get_db, ok, require_user
+from app.api_common import email_payload, fail, get_db, get_setting, ok, require_user
 from app.models import Account, IncomingEmail
-from app.outbound_mail import direct_mx_enabled, send_outbound_email, smtp_relay_enabled
+from app.outbound_mail import direct_mx_enabled, resend_enabled, send_outbound_email, smtp_relay_enabled
 
 router = APIRouter()
 
@@ -122,9 +122,10 @@ def email_send(payload: dict = Body(...), db: Session = Depends(get_db), authori
     text_body = payload.get("text") or ""
     html_body = payload.get("content") or ""
     status = 2
-    if smtp_relay_enabled() or direct_mx_enabled():
+    setting = get_setting(db)
+    if resend_enabled(setting.resend_token) or smtp_relay_enabled() or direct_mx_enabled():
         try:
-            send_outbound_email(account.email, recipients, subject, text_body, html_body)
+            send_outbound_email(account.email, recipients, subject, text_body, html_body, resend_token=setting.resend_token)
         except Exception as exc:
             status = 7
             row = IncomingEmail(

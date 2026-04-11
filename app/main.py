@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api_common import ensure_default_admin, get_setting
 from app.config import settings
 from app.database import Base, SessionLocal, engine
+from app.schema import ensure_schema
 from app.routers.accounts import router as accounts_router
 from app.routers.admin import router as admin_router
 from app.routers.auth import router as auth_router
@@ -20,6 +21,7 @@ from app.routers.settings import router as settings_router
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    ensure_schema(engine)
     db = SessionLocal()
     try:
         ensure_default_admin(db)

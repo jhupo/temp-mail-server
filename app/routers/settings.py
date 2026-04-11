@@ -53,6 +53,8 @@ def setting_set(payload: dict = Body(...), db: Session = Depends(get_db), author
             setattr(setting, attr, value)
     if "allowedDomains" in payload:
         setting.allowed_domains = json.dumps(split_domains(payload["allowedDomains"]))
+    if "resendToken" in payload:
+        setting.resend_token = (payload.get("resendToken") or "").strip()
     db.commit()
     db.refresh(setting)
     return ok(setting_payload(setting))
