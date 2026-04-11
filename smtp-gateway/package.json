@@ -1,0 +1,13 @@
+{
+  "name": "smtp-gateway",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "postal-mime": "^2.4.3",
+    "smtp-server": "^3.13.6"
+  }
+}

@@ -1,0 +1,8 @@
+:80 {
+    reverse_proxy cloud-mail-app:8000
+}
+
+:443 {
+    tls internal
+    reverse_proxy cloud-mail-app:8000
+}

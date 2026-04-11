@@ -27,7 +27,7 @@ docker compose up -d --build
 Open:
 
 ```text
-http://127.0.0.1:8000
+http://127.0.0.1
 ```
 
 ## Environment
@@ -40,8 +40,17 @@ Available variables:
 - `CLOUD_MAIL_ADMIN` admin account email
 - `CLOUD_MAIL_JWT_SECRET` JWT signing secret
 - `CLOUD_MAIL_ORM_LOG` enable ORM logging (`true` / `false`)
+- `SMTP_GATEWAY_TOKEN` shared secret between SMTP gateway and app
 
 ## Current note
 
 This commit intentionally resets the repository to the upstream cloud-mail code organization first.
-The next iteration replaces Cloudflare-specific storage and runtime assumptions with VPS-native implementations while preserving the original API/UI model.
+Current VPS deployment skeleton now includes:
+
+- `cloud-mail-app` for the upstream worker app
+- `smtp-gateway` for SMTP receive on `25` / `587`
+- `web` reverse proxy on `80` / `443`
+- worker runtime still uses `wrangler dev --local`
+- runtime state persists in Docker volume `/data`
+
+The next iteration continues replacing Cloudflare-specific storage and runtime assumptions with VPS-native implementations while preserving the original API/UI model.

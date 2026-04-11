@@ -1,7 +1,7 @@
 services:
-  cloud-mail:
+  cloud-mail-app:
     build: .
-    container_name: cloud-mail-vps
+    container_name: cloud-mail-app
     restart: unless-stopped
     environment:
       NO_D1_WARNING: "true"
@@ -9,10 +9,45 @@ services:
       CLOUD_MAIL_ADMIN: "${CLOUD_MAIL_ADMIN:-superadmin@jhupo.com}"
       CLOUD_MAIL_JWT_SECRET: "${CLOUD_MAIL_JWT_SECRET:-change_me_super_secret}"
       CLOUD_MAIL_ORM_LOG: "${CLOUD_MAIL_ORM_LOG:-false}"
-    ports:
-      - "8000:8000"
+      SMTP_GATEWAY_TOKEN: "${SMTP_GATEWAY_TOKEN:-change_me_gateway_token}"
+    expose:
+      - "8000"
     volumes:
       - cloud_mail_data:/data
 
+  smtp-gateway:
+    image: node:22-bookworm
+    container_name: cloud-mail-smtp
+    restart: unless-stopped
+    working_dir: /app
+    command: ["sh", "-lc", "npm install --legacy-peer-deps && npm run start"]
+    environment:
+      SMTP_GATEWAY_PORT: 25
+      SMTP_GATEWAY_API_BASE: "http://cloud-mail-app:8000"
+      SMTP_GATEWAY_TOKEN: "${SMTP_GATEWAY_TOKEN:-change_me_gateway_token}"
+    ports:
+      - "25:25"
+      - "587:25"
+    volumes:
+      - ./smtp-gateway:/app
+    depends_on:
+      - cloud-mail-app
+
+  web:
+    image: caddy:2
+    container_name: cloud-mail-web
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - cloud-mail-app
+
 volumes:
   cloud_mail_data:
+  caddy_data:
+  caddy_config:

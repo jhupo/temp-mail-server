@@ -5,6 +5,7 @@ DOMAIN_CSV="${CLOUD_MAIL_DOMAIN:-}"
 ADMIN_EMAIL="${CLOUD_MAIL_ADMIN:-superadmin@jhupo.com}"
 JWT_SECRET="${CLOUD_MAIL_JWT_SECRET:-change_me_super_secret}"
 ORM_LOG="${CLOUD_MAIL_ORM_LOG:-false}"
+SMTP_GATEWAY_TOKEN="${SMTP_GATEWAY_TOKEN:-change_me_gateway_token}"
 
 if [[ -n "$DOMAIN_CSV" ]]; then
   IFS=',' read -r -a DOMAIN_ARRAY <<< "$DOMAIN_CSV"
@@ -60,6 +61,7 @@ orm_log = $ORM_LOG
 domain = $TOML_DOMAINS
 admin = "$ADMIN_EMAIL"
 jwt_secret = "$JWT_SECRET"
+smtp_gateway_token = "$SMTP_GATEWAY_TOKEN"
 EOF
 
 cd /app/mail-worker
