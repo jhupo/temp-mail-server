@@ -150,6 +150,22 @@ def email_payload(email: IncomingEmail, user_email: str = "") -> dict:
     }
 
 
+def role_payload(role: Role) -> dict:
+    return {
+        "roleId": role.role_id,
+        "name": role.name,
+        "description": role.description or "",
+        "sort": role.sort,
+        "isDefault": role.is_default,
+        "permIds": json.loads(role.perm_ids or "[]"),
+        "sendType": role.send_type,
+        "sendCount": role.send_count,
+        "accountCount": role.account_count,
+        "banEmail": json.loads(role.ban_email or "[]"),
+        "availDomain": json.loads(role.avail_domain or "[]"),
+    }
+
+
 def perm_keys(user: User) -> list[str]:
     return ["*"] if user.type == 0 else ["account:query", "email:send", "setting:query"]
 
