@@ -3,8 +3,11 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
+import smtplib
+import ssl
 from contextlib import asynccontextmanager
 from datetime import datetime
+from email.message import EmailMessage
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -108,6 +111,14 @@ def _setting_payload(setting: Setting) -> dict:
         "minEmailPrefix": setting.min_email_prefix,
         "projectLink": bool(setting.project_link),
         "allowedDomains": _split_domains(setting.allowed_domains),
+        "smtpHost": settings.smtp_out_host,
+        "smtpPort": settings.smtp_out_port,
+        "smtpUsername": settings.smtp_out_username,
+        "smtpPassword": "",
+        "smtpUseTls": settings.smtp_out_use_tls,
+        "smtpUseSsl": settings.smtp_out_use_ssl,
+        "smtpFromEmail": settings.smtp_out_from_email,
+        "sendMode": "smtp" if _smtp_enabled() else "record",
     }
 
 
@@ -146,6 +157,45 @@ def _ok(data=None):
 
 def _fail(message: str, code: int = 500):
     return {"code": code, "message": message}
+
+
+def _smtp_enabled() -> bool:
+    return bool(settings.smtp_out_host and settings.smtp_out_from_email)
+
+
+def _send_outbound_email(sender_email: str, recipients: list[str], subject: str, text_body: str, html_body: str) -> None:
+    if not _smtp_enabled():
+        raise RuntimeError("outbound smtp is not configured")
+
+    message = EmailMessage()
+    message["From"] = settings.smtp_out_from_email or sender_email
+    message["To"] = ", ".join(recipients)
+    message["Subject"] = subject
+    message["Reply-To"] = sender_email
+
+    if html_body and text_body:
+        message.set_content(text_body)
+        message.add_alternative(html_body, subtype="html")
+    elif html_body:
+        message.set_content(html_body, subtype="html")
+    else:
+        message.set_content(text_body or "")
+
+    if settings.smtp_out_use_ssl:
+        with smtplib.SMTP_SSL(settings.smtp_out_host, settings.smtp_out_port, timeout=30, context=ssl.create_default_context()) as server:
+            if settings.smtp_out_username:
+                server.login(settings.smtp_out_username, settings.smtp_out_password)
+            server.send_message(message)
+        return
+
+    with smtplib.SMTP(settings.smtp_out_host, settings.smtp_out_port, timeout=30) as server:
+        server.ehlo()
+        if settings.smtp_out_use_tls:
+            server.starttls(context=ssl.create_default_context())
+            server.ehlo()
+        if settings.smtp_out_username:
+            server.login(settings.smtp_out_username, settings.smtp_out_password)
+        server.send_message(message)
 
 
 def _perm_keys(user: User) -> list[str]:
@@ -980,21 +1030,51 @@ def email_send(payload: dict = Body(...), db: Session = Depends(get_db), authori
     recipients = payload.get("receiveEmail") or []
     if not recipients:
         return _fail("empty recipient", 400)
+    subject = payload.get("subject") or ""
+    text_body = payload.get("text") or ""
+    html_body = payload.get("content") or ""
+    status = 2
+
+    if _smtp_enabled():
+        try:
+            _send_outbound_email(account.email, recipients, subject, text_body, html_body)
+        except Exception as exc:
+            status = 7
+            row = IncomingEmail(
+                user_id=user.user_id,
+                account_id=account.account_id,
+                mail_from=account.email,
+                rcpt_to=recipients[0],
+                to_email=recipients[0],
+                subject=subject,
+                text_body=text_body,
+                html_body=html_body,
+                recipient=json.dumps([{"address": item} for item in recipients]),
+                name=account.name,
+                unread=1,
+                is_del=0,
+                type=1,
+                status=status,
+            )
+            db.add(row)
+            db.commit()
+            db.refresh(row)
+            return _fail(f"smtp send failed: {exc}", 502)
     row = IncomingEmail(
         user_id=user.user_id,
         account_id=account.account_id,
         mail_from=account.email,
         rcpt_to=recipients[0],
         to_email=recipients[0],
-        subject=payload.get("subject") or "",
-        text_body=payload.get("text") or "",
-        html_body=payload.get("content") or "",
+        subject=subject,
+        text_body=text_body,
+        html_body=html_body,
         recipient=json.dumps([{"address": item} for item in recipients]),
         name=account.name,
         unread=1,
         is_del=0,
         type=1,
-        status=2,
+        status=status,
     )
     db.add(row)
     db.commit()
