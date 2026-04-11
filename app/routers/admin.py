@@ -4,25 +4,83 @@ import json
 from datetime import datetime
 
 from fastapi import APIRouter, Body, Depends, Header, Query
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app.api_common import email_payload, fail, get_db, hash_password, ok, require_user, role_payload, user_by_email
+from app.api_common import default_role_id, email_payload, fail, get_db, hash_password, ok, permission_tree_payload, require_user, role_payload, user_by_email
 from app.models import Account, IncomingEmail, RegKey, RegKeyUser, Role, User
 
 router = APIRouter()
 
 
+def _match_text(value: str | None, expected: str | None, match_type: str) -> bool:
+    if not expected:
+        return True
+    left = (value or "").strip().lower()
+    right = expected.strip().lower()
+    if match_type == "eq":
+        return left == right
+    if match_type == "left":
+        return left.startswith(right)
+    return right in left
+
+
+def _parse_dt(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
 @router.get("/allEmail/list")
-def all_email_list(emailId: int = Query(0), size: int = Query(50), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+def all_email_list(
+    emailId: int = Query(0),
+    size: int = Query(50),
+    timeSort: int = Query(0),
+    type: str = Query("all"),
+    userEmail: str | None = Query(None),
+    accountEmail: str | None = Query(None),
+    name: str | None = Query(None),
+    subject: str | None = Query(None),
+    db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+):
     user = require_user(db, authorization)
     if user.type != 0:
         return fail("forbidden", 403)
     stmt = select(IncomingEmail)
+    if type == "receive":
+        stmt = stmt.where(IncomingEmail.type == 0, IncomingEmail.is_del == 0)
+    elif type == "send":
+        stmt = stmt.where(IncomingEmail.type == 1, IncomingEmail.is_del == 0)
+    elif type == "delete":
+        stmt = stmt.where(IncomingEmail.is_del == 1)
+    elif type == "noone":
+        stmt = stmt.where(IncomingEmail.status == 7, IncomingEmail.is_del == 0)
+    else:
+        stmt = stmt.where(IncomingEmail.is_del == 0)
+    if userEmail:
+        stmt = stmt.where(IncomingEmail.user_id.in_(select(User.user_id).where(User.email.contains(userEmail))))
+    if accountEmail:
+        stmt = stmt.where(
+            or_(
+                IncomingEmail.to_email.contains(accountEmail),
+                IncomingEmail.mail_from.contains(accountEmail),
+                IncomingEmail.rcpt_to.contains(accountEmail),
+            )
+        )
+    if name:
+        stmt = stmt.where(IncomingEmail.name.contains(name))
+    if subject:
+        stmt = stmt.where(IncomingEmail.subject.contains(subject))
     if emailId:
-        stmt = stmt.where(IncomingEmail.id < emailId)
-    items = db.execute(stmt.order_by(IncomingEmail.id.desc()).limit(size)).scalars().all()
-    total = len(db.execute(select(IncomingEmail)).scalars().all())
+        stmt = stmt.where(IncomingEmail.id > emailId) if timeSort else stmt.where(IncomingEmail.id < emailId)
+    order_field = IncomingEmail.id.asc() if timeSort else IncomingEmail.id.desc()
+    filtered_rows = db.execute(stmt.order_by(order_field)).scalars().all()
+    items = filtered_rows[:size]
+    total = len(filtered_rows)
     latest = email_payload(items[0], user.email) if items else {"emailId": 0}
     return ok({"list": [email_payload(item, item.mail_from or "") for item in items], "total": total, "latestEmail": latest})
 
@@ -30,14 +88,7 @@ def all_email_list(emailId: int = Query(0), size: int = Query(50), db: Session =
 @router.get("/role/permTree")
 def role_perm_tree(db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
     require_user(db, authorization)
-    return ok([
-        {"permId": 1, "name": "Account", "permKey": "account:query", "children": []},
-        {"permId": 2, "name": "Send", "permKey": "email:send", "children": []},
-        {"permId": 3, "name": "Settings", "permKey": "setting:query", "children": []},
-        {"permId": 4, "name": "Users", "permKey": "user:query", "children": []},
-        {"permId": 5, "name": "Roles", "permKey": "role:query", "children": []},
-        {"permId": 6, "name": "RegKey", "permKey": "reg-key:query", "children": []},
-    ])
+    return ok(permission_tree_payload())
 
 
 @router.get("/role/list")
@@ -170,7 +221,9 @@ def user_add(payload: dict = Body(...), db: Session = Depends(get_db), authoriza
         return fail("invalid email", 400)
     if user_by_email(db, email):
         return fail("user already exists", 400)
-    user = User(email=email, password_hash=hash_password(payload.get("password") or ""), name=email.split("@", 1)[0], type=int(payload.get("type") or 1), status=0)
+    requested_type = payload.get("type")
+    role_id = int(requested_type) if requested_type not in (None, "") else default_role_id(db)
+    user = User(email=email, password_hash=hash_password(payload.get("password") or ""), name=email.split("@", 1)[0], type=role_id, status=0)
     db.add(user)
     db.flush()
     db.add(Account(email=email, name=user.name, user_id=user.user_id, sort=0))
@@ -318,7 +371,7 @@ def all_email_latest(emailId: int = Query(0), db: Session = Depends(get_db), aut
     user = require_user(db, authorization)
     if user.type != 0:
         return fail("forbidden", 403)
-    stmt = select(IncomingEmail).where(IncomingEmail.id > emailId)
+    stmt = select(IncomingEmail).where(IncomingEmail.id > emailId, IncomingEmail.type == 0, IncomingEmail.is_del == 0)
     items = db.execute(stmt.order_by(IncomingEmail.id.desc()).limit(20)).scalars().all()
     return ok([email_payload(item, item.mail_from or "") for item in items])
 
@@ -395,23 +448,31 @@ def all_email_batch_delete(
     subject: str | None = Query(None),
     sendEmail: str | None = Query(None),
     toEmail: str | None = Query(None),
+    startTime: str | None = Query(None),
+    endTime: str | None = Query(None),
+    type: str = Query("eq"),
     db: Session = Depends(get_db),
     authorization: str | None = Header(default=None, alias="Authorization"),
 ):
     user = require_user(db, authorization)
     if user.type != 0:
         return fail("forbidden", 403)
-    stmt = select(IncomingEmail)
-    if sendName:
-        stmt = stmt.where(IncomingEmail.name.contains(sendName))
-    if subject:
-        stmt = stmt.where(IncomingEmail.subject.contains(subject))
-    if sendEmail:
-        stmt = stmt.where(IncomingEmail.mail_from.contains(sendEmail))
-    if toEmail:
-        stmt = stmt.where(IncomingEmail.to_email.contains(toEmail))
-    rows = db.execute(stmt).scalars().all()
+    start_dt = _parse_dt(startTime)
+    end_dt = _parse_dt(endTime)
+    rows = db.execute(select(IncomingEmail)).scalars().all()
     for row in rows:
+        if not _match_text(row.name, sendName, type):
+            continue
+        if not _match_text(row.subject, subject, type):
+            continue
+        if not _match_text(row.mail_from, sendEmail, type):
+            continue
+        if not _match_text(row.to_email, toEmail, type):
+            continue
+        if start_dt and row.created_at < start_dt:
+            continue
+        if end_dt and row.created_at >= end_dt:
+            continue
         row.is_del = 1
     db.commit()
     return ok()

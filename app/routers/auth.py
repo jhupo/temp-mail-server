@@ -10,6 +10,7 @@ from app.api_common import (
     account_payload,
     delete_session,
     delete_user_sessions,
+    default_role_id,
     fail,
     get_db,
     get_setting,
@@ -18,6 +19,7 @@ from app.api_common import (
     perm_keys,
     require_user,
     save_session,
+    user_role,
     user_by_email,
 )
 from app.domain_utils import domain_allowed
@@ -66,7 +68,7 @@ def register(payload: dict = Body(...), db: Session = Depends(get_db)):
         return fail("domain not allowed", 400)
     if user_by_email(db, email):
         return fail("account already exists", 400)
-    user = User(email=email, password_hash=hash_password(password), name=local_part, type=1, status=0)
+    user = User(email=email, password_hash=hash_password(password), name=local_part, type=default_role_id(db), status=0)
     db.add(user)
     db.flush()
     db.add(Account(email=email, name=local_part, user_id=user.user_id, sort=0))
@@ -80,6 +82,7 @@ def register(payload: dict = Body(...), db: Session = Depends(get_db)):
 @router.get("/my/loginUserInfo")
 def login_user_info(db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
     user = require_user(db, authorization)
+    role = user_role(db, user)
     account = db.execute(
         select(Account).where(Account.user_id == user.user_id, Account.is_del == 0).order_by(Account.sort.asc(), Account.account_id.asc())
     ).scalars().first()
@@ -89,9 +92,14 @@ def login_user_info(db: Session = Depends(get_db), authorization: str | None = H
             "email": user.email,
             "name": user.name,
             "sendCount": user.send_count,
-            "permKeys": perm_keys(user),
+            "permKeys": perm_keys(db, user),
             "account": account_payload(account) if account else {},
-            "role": {"name": "Admin" if user.type == 0 else "User", "accountCount": 0, "sendType": "ban", "sendCount": 0},
+            "role": {
+                "name": "Admin" if user.type == 0 else (role.name if role else "User"),
+                "accountCount": role.account_count if role else 0,
+                "sendType": role.send_type if role else "ban",
+                "sendCount": role.send_count if role else 0,
+            },
             "type": user.type,
         }
     )

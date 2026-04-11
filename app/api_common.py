@@ -15,6 +15,21 @@ from app.models import Account, IncomingEmail, Role, Setting, User, UserSession
 from app.outbound_mail import resend_enabled
 from app.redis_client import get_redis
 
+PERMISSION_DEFS = [
+    {"permId": 1, "name": "Add Account", "permKey": "account:add"},
+    {"permId": 2, "name": "Send Email", "permKey": "email:send"},
+    {"permId": 3, "name": "Delete Email", "permKey": "email:delete"},
+    {"permId": 4, "name": "Delete Account", "permKey": "my:delete"},
+    {"permId": 10, "name": "All Email", "permKey": "all-email:query"},
+    {"permId": 11, "name": "Users", "permKey": "user:query"},
+    {"permId": 12, "name": "Roles", "permKey": "role:query"},
+    {"permId": 13, "name": "Settings", "permKey": "setting:query"},
+    {"permId": 14, "name": "Analysis", "permKey": "analysis:query"},
+    {"permId": 15, "name": "RegKey", "permKey": "reg-key:query"},
+]
+PERMISSION_KEY_BY_ID = {item["permId"]: item["permKey"] for item in PERMISSION_DEFS}
+BASIC_USER_PERMS = ["account:add", "email:send", "email:delete", "my:delete"]
+
 
 def hash_value(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
@@ -170,8 +185,53 @@ def user_by_email(db: Session, email: str) -> User | None:
     return db.execute(select(User).where(User.email == email)).scalar_one_or_none()
 
 
-def perm_keys(user: User) -> list[str]:
-    return ["*"] if user.type == 0 else ["account:query", "email:send", "setting:query"]
+def permission_tree_payload() -> list[dict]:
+    return [{**item, "children": []} for item in PERMISSION_DEFS]
+
+
+def permission_keys_from_ids(raw_perm_ids: str | list[int] | None) -> list[str]:
+    perm_ids = raw_perm_ids
+    if isinstance(raw_perm_ids, str):
+        try:
+            perm_ids = json.loads(raw_perm_ids or "[]")
+        except Exception:
+            perm_ids = []
+    keys: list[str] = []
+    for perm_id in perm_ids or []:
+        try:
+            key = PERMISSION_KEY_BY_ID.get(int(perm_id))
+        except (TypeError, ValueError):
+            key = None
+        if key and key not in keys:
+            keys.append(key)
+    if "account:add" in keys:
+        for alias in ("account:query", "account:delete"):
+            if alias not in keys:
+                keys.append(alias)
+    return keys
+
+
+def user_role(db: Session, user: User) -> Role | None:
+    if user.type == 0:
+        return None
+    return db.execute(select(Role).where(Role.role_id == user.type)).scalar_one_or_none()
+
+
+def perm_keys(db: Session, user: User) -> list[str]:
+    if user.type == 0:
+        return ["*"]
+    role = user_role(db, user)
+    keys = permission_keys_from_ids(role.perm_ids if role else None)
+    if not keys:
+        keys = BASIC_USER_PERMS.copy()
+        if "account:add" in keys:
+            keys.extend(["account:query", "account:delete"])
+    return keys
+
+
+def default_role_id(db: Session) -> int:
+    default_role = db.execute(select(Role).where(Role.is_default == 1).order_by(Role.role_id.asc())).scalar_one_or_none()
+    return default_role.role_id if default_role else 1
 
 
 def setting_payload(setting: Setting) -> dict:
@@ -254,6 +314,9 @@ def ensure_default_admin(db: Session) -> None:
         db.add(admin)
         db.flush()
         db.add(Account(email=admin.email, name=admin.name, user_id=admin.user_id, sort=0))
+    default_role = db.execute(select(Role).where(Role.role_id == 1)).scalar_one_or_none()
+    default_perm_ids = [1, 2, 3, 4]
+    if default_role is None:
         db.add(
             Role(
                 role_id=1,
@@ -261,7 +324,7 @@ def ensure_default_admin(db: Session) -> None:
                 description="Default role",
                 sort=0,
                 is_default=1,
-                perm_ids=json.dumps([1, 2, 3]),
+                perm_ids=json.dumps(default_perm_ids),
                 send_type="ban",
                 send_count=0,
                 account_count=0,
@@ -269,4 +332,13 @@ def ensure_default_admin(db: Session) -> None:
                 avail_domain="[]",
             )
         )
-        db.commit()
+    else:
+        current_perm_keys = permission_keys_from_ids(default_role.perm_ids)
+        if not current_perm_keys or "my:delete" not in current_perm_keys:
+            default_role.perm_ids = json.dumps(default_perm_ids)
+        default_role.is_default = 1
+        if not default_role.name:
+            default_role.name = "User"
+        if default_role.description is None:
+            default_role.description = "Default role"
+    db.commit()
