@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     frontend_dist_dir: str = Field(default="mail-vue/dist", alias="FRONTEND_DIST_DIR")
     smtp_gateway_token: str = Field(default="change_me_gateway_token", alias="SMTP_GATEWAY_TOKEN")
     default_admin_email: str = Field(default="superadmin@jhupo.com", alias="CLOUD_MAIL_ADMIN")
+    default_admin_password: str = Field(default="JIang521.", alias="CLOUD_MAIL_ADMIN_PASSWORD")
     default_jwt_secret: str = Field(default="change_me_super_secret", alias="CLOUD_MAIL_JWT_SECRET")
     cloud_mail_domain: str = Field(default="", alias="CLOUD_MAIL_DOMAIN")
 
