@@ -71,6 +71,17 @@
                   </el-button>
                 </div>
               </div>
+              <div class="setting-item">
+                <div><span>{{ $t('availableDomains') }}</span></div>
+                <div>
+                  <el-button class="opt-button" style="margin-top: 0" @click="openAllowedDomainList" size="small" type="primary">
+                    <Icon icon="ic:round-list" width="18" height="18"/>
+                  </el-button>
+                  <el-button class="opt-button" style="margin-top: 0" @click="openAllowedDomainForm" size="small" type="primary">
+                    <Icon icon="material-symbols:add-rounded" width="16" height="16"/>
+                  </el-button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -427,6 +438,13 @@
           <el-button type="primary" :loading="settingLoading" @click="saveResendToken">{{ $t('save') }}</el-button>
         </form>
       </el-dialog>
+      <el-dialog v-model="allowedDomainFormShow" :title="$t('availableDomains')" width="420" @closed="resetAllowedDomains">
+        <form>
+          <div style="margin-bottom: 12px;">{{ $t('availableDomainsDesc') }}</div>
+          <el-input-tag v-model="allowedDomainForm" :placeholder="$t('domainDesc')" />
+          <el-button type="primary" :loading="settingLoading" @click="saveAllowedDomains">{{ $t('save') }}</el-button>
+        </form>
+      </el-dialog>
       <el-dialog v-model="r2DomainShow" :title="$t('addOsDomain')" width="340"
                  @closed="r2DomainInput = setting.r2Domain">
         <form>
@@ -601,6 +619,11 @@
                            :show-overflow-tooltip="true"/>
         </el-table>
       </el-dialog>
+      <el-dialog class="resend-table" v-model="showAllowedDomainList" :title="$t('availableDomains')">
+        <el-table :data="allowedDomainList">
+          <el-table-column property="value" :label="$t('domain')" :show-overflow-tooltip="true" />
+        </el-table>
+      </el-dialog>
       <el-dialog v-model="regVerifyCountShow" :title="$t('rulesVerifyTitle',{count: regVerifyCount})"
                  @closed="regVerifyCount = setting.regVerifyCount">
         <form>
@@ -765,6 +788,7 @@ const accountStore = useAccountStore();
 const userStore = useUserStore();
 const editTitleShow = ref(false)
 const resendTokenFormShow = ref(false)
+const allowedDomainFormShow = ref(false)
 const r2DomainShow = ref(false)
 const turnstileShow = ref(false)
 const tgSettingShow = ref(false)
@@ -773,6 +797,7 @@ const thirdEmailShow = ref(false)
 const forwardRulesShow = ref(false)
 const emailPrefixShow = ref(false)
 const showResendList = ref(false)
+const showAllowedDomainList = ref(false)
 const settingStore = useSettingStore();
 const uiStore = useUiStore();
 const {settings: setting} = storeToRefs(settingStore);
@@ -796,6 +821,7 @@ const resendTokenForm = reactive({
   domain: '',
   token: '',
 })
+const allowedDomainForm = ref([])
 const turnstileForm = reactive({
   siteKey: '',
   secretKey: ''
@@ -923,6 +949,10 @@ const resendList = computed(() => {
   return list;
 });
 
+const allowedDomainList = computed(() => {
+  return (setting.value.allowedDomains || []).map(item => ({ value: item }))
+})
+
 function getUpdate() {
   if (getUpdateErrorCount > 5 || !getUpdateErrorCount) return
   axios.get('https://api.github.com/repos/maillab/cloud-mail/releases/latest').then(({data}) => {
@@ -987,6 +1017,15 @@ function openNoticePopupSetting() {
 
 function openResendList() {
   showResendList.value = true
+}
+
+function openAllowedDomainList() {
+  showAllowedDomainList.value = true
+}
+
+function openAllowedDomainForm() {
+  allowedDomainForm.value = [...(setting.value.allowedDomains || [])]
+  allowedDomainFormShow.value = true
 }
 
 function resetNoticeForm() {
@@ -1148,10 +1187,20 @@ function resetEmailPrefix() {
   emailPrefixFilter.value = setting.value.emailPrefixFilter
 }
 
+function resetAllowedDomains() {
+  allowedDomainForm.value = [...(setting.value.allowedDomains || [])]
+}
+
 function saveEmailPrefix() {
   const form = {}
   form.minEmailPrefix = minEmailPrefix.value
   form.emailPrefixFilter = emailPrefixFilter.value
+  editSetting(form, true)
+}
+
+function saveAllowedDomains() {
+  const form = {}
+  form.allowedDomains = allowedDomainForm.value.map(item => item.trim().toLowerCase()).filter(Boolean)
   editSetting(form, true)
 }
 
@@ -1313,6 +1362,7 @@ function editSetting(settingForm, refreshStatus = true) {
     editTitleShow.value = false
     r2DomainShow.value = false
     resendTokenFormShow.value = false
+    allowedDomainFormShow.value = false
     turnstileShow.value = false
     tgSettingShow.value = false
     thirdEmailShow.value = false
@@ -1322,6 +1372,7 @@ function editSetting(settingForm, refreshStatus = true) {
     noticePopupShow.value = false
     addS3Show.value = false
     emailPrefixShow.value = false
+    showAllowedDomainList.value = false
   }).catch((e) => {
     loginOpacity.value = setting.value.loginOpacity
     setting.value = {...setting.value, ...JSON.parse(backup)}
