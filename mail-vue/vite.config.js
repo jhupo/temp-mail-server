@@ -17,6 +17,7 @@ export default defineConfig(({mode}) => {
         base: env.VITE_STATIC_URL || '/',
         plugins: [vue(),
             VitePWA({
+                registerType: 'autoUpdate',
                 injectRegister: 'script-defer',
                 manifest: {
                     name: env.VITE_PWA_NAME,
@@ -36,6 +37,8 @@ export default defineConfig(({mode}) => {
                     globPatterns: [],
                     runtimeCaching: [],
                     navigateFallback: null,
+                    clientsClaim: true,
+                    skipWaiting: true,
                     cleanupOutdatedCaches: true,
                 }
             }),

@@ -59,6 +59,17 @@ app.include_router(internal_router)
 
 frontend_dist = settings.frontend_dist_path
 frontend_index = frontend_dist / "index.html"
+
+
+def _frontend_response(path):
+    response = FileResponse(path)
+    if path.name in {"index.html", "sw.js", "registerSW.js", "manifest.webmanifest"}:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
+
 if frontend_dist.exists():
     assets_dir = frontend_dist / "assets"
     if assets_dir.exists():
@@ -67,14 +78,14 @@ if frontend_dist.exists():
     @app.get("/", include_in_schema=False)
     def frontend_root():
         if frontend_index.exists():
-            return FileResponse(frontend_index)
+            return _frontend_response(frontend_index)
         raise HTTPException(status_code=404, detail="frontend not built")
 
     @app.get("/{full_path:path}", include_in_schema=False)
     def frontend_spa(full_path: str):
         requested = frontend_dist / full_path
         if requested.exists() and requested.is_file():
-            return FileResponse(requested)
+            return _frontend_response(requested)
         if frontend_index.exists():
-            return FileResponse(frontend_index)
+            return _frontend_response(frontend_index)
         raise HTTPException(status_code=404, detail="frontend not built")
