@@ -48,6 +48,20 @@ def _split_domains(raw: str | list[str] | None) -> list[str]:
     return domains
 
 
+def _domain_allowed(domain: str, allowed_domains: str | list[str] | None) -> bool:
+    normalized = str(domain).strip().lower()
+    if not normalized:
+        return False
+    for item in _split_domains(allowed_domains):
+        if item.startswith("*."):
+            suffix = item[2:]
+            if normalized.endswith(f".{suffix}") and normalized != suffix:
+                return True
+        elif normalized == item:
+            return True
+    return False
+
+
 def get_db():
     db = SessionLocal()
     try:
@@ -413,7 +427,7 @@ def register(payload: dict = Body(...), db: Session = Depends(get_db)):
     local_part, domain = email.split("@", 1)
     if len(local_part) < max(setting.min_email_prefix, 1):
         return _fail("email prefix too short", 400)
-    if domain not in _split_domains(setting.allowed_domains):
+    if not _domain_allowed(domain, setting.allowed_domains):
         return _fail("domain not allowed", 400)
     if _user_by_email(db, email):
         return _fail("account already exists", 400)
@@ -542,7 +556,7 @@ def account_add(payload: dict = Body(...), db: Session = Depends(get_db), author
     if not email or "@" not in email:
         return _fail("invalid email", 400)
     local_part, domain = email.split("@", 1)
-    if domain not in _split_domains(setting.allowed_domains):
+    if not _domain_allowed(domain, setting.allowed_domains):
         return _fail("domain not allowed", 400)
     if len(local_part) < max(setting.min_email_prefix, 1):
         return _fail("email prefix too short", 400)
