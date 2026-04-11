@@ -16,6 +16,8 @@ services:
       CLOUD_MAIL_DOMAIN: "${CLOUD_MAIL_DOMAIN:-}"
     ports:
       - "8000:8000"
+    volumes:
+      - ./.secrets:/app/secrets:ro
     depends_on:
       tempmail-postgres:
         condition: service_healthy
