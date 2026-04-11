@@ -166,6 +166,10 @@ def role_payload(role: Role) -> dict:
     }
 
 
+def user_by_email(db: Session, email: str) -> User | None:
+    return db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+
+
 def perm_keys(user: User) -> list[str]:
     return ["*"] if user.type == 0 else ["account:query", "email:send", "setting:query"]
 
