@@ -6,33 +6,6 @@ This repository keeps the original `maillab/cloud-mail` frontend, but the runtim
 - api backend: `/app`
 - smtp service: `/app/smtp_server.py`
 
-## Current direction
-
-- keep the original cloud-mail frontend
-- replace the old Worker backend with Python
-- run on a VPS with Docker
-- receive SMTP on `25`
-- expose web on `80` / `443`
-- persist state in PostgreSQL and Redis
-
-## Current VPS baseline
-
-- Python backend: FastAPI
-- Python SMTP service
-- PostgreSQL database
-- Redis session/cache service
-- frontend built from `mail-vue`
-
-## Runtime layout
-
-```text
-temp-mail-server
-├── app             Python FastAPI backend and SMTP service
-├── mail-vue        Vue frontend
-├── deploy          Caddy config
-└── docker-compose.yml
-```
-
 ## Quick start
 
 ```bash
@@ -60,14 +33,43 @@ Available variables:
 - `SMTP_HOST` SMTP bind host
 - `SMTP_PORT` SMTP bind port
 - `SMTP_API_BASE` internal API base URL for SMTP delivery
+- `APP_VERSION` current running version (optional, defaults to local git tag if head is tagged)
+- `APP_BUILD_SHA` running commit sha (optional)
+- `APP_BUILD_TIME` build time (optional)
+- `UPDATE_SOURCE_REPO` repo used for update check (default `jhupo/temp-mail-server`)
+- `UPDATE_CHECK_URL` custom update-check endpoint (optional)
+- `UPDATE_WEBHOOK_URL` one-click update webhook (optional)
+- `UPDATE_WEBHOOK_TOKEN` auth token for update webhook (optional)
+- `UPDATE_WEBHOOK_TIMEOUT` webhook timeout in seconds (optional)
 
-## Current note
+Minimal local setup: usually only `CLOUD_MAIL_ADMIN` and `CLOUD_MAIL_ADMIN_PASSWORD` are required; other variables have defaults.
 
-Current VPS deployment includes:
+## Version check and one-click update
 
-- `tempmail-api` Python backend
-- `tempmail-smtp` Python SMTP service on `25`
-- `tempmail-postgres` PostgreSQL
-- `tempmail-redis` Redis
-- `web` reverse proxy on `80` / `443`
-- runtime state persisted in Docker volumes
+Backend endpoints:
+
+- `GET /version` return current running version/build info
+- `GET /update/check` admin-only, compares current tag version with upstream latest tag
+- `POST /update/trigger` admin-only, sends webhook to CI/CD for deployment
+
+By default, update detection works out-of-the-box as long as the service can access GitHub.
+
+Webhook request body (`/update/trigger`) example:
+
+```json
+{
+  "event": "cloud_mail_update",
+  "requestedAt": "2026-04-11T16:00:00+00:00",
+  "requestedBy": {"userId": 1, "email": "admin@example.com", "name": "admin"},
+  "target": "latest",
+  "currentVersion": "v1.0",
+  "currentBuildSha": "abc1234",
+  "sourceRepo": "jhupo/temp-mail-server"
+}
+```
+
+## External API guide
+
+For external integration (create mailbox and receive emails), see:
+
+- `doc/api-external.md`

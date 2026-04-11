@@ -365,14 +365,26 @@
             <div class="card-content">
               <div class="concerning-item">
                 <span>{{ $t('version') }} :</span>
-                <el-badge is-dot :hidden="!hasUpdate">
-                  <el-button @click="jump('https://github.com/maillab/cloud-mail/releases')">
-                    {{ currentVersion }}
-                    <template #icon>
-                      <Icon icon="qlementine-icons:version-control-16" style="font-size: 20px" color="#1890FF"/>
-                    </template>
+                <div class="community">
+                  <el-badge is-dot :hidden="!hasUpdate">
+                    <el-button @click="jump(currentReleaseUrl)">
+                      {{ currentVersion }}
+                      <template #icon>
+                        <Icon icon="qlementine-icons:version-control-16" style="font-size: 20px" color="#1890FF"/>
+                      </template>
+                    </el-button>
+                  </el-badge>
+                  <el-tag type="info">{{ latestVersion || '-' }}</el-tag>
+                  <el-button :loading="updateChecking" @click="getUpdate">{{ $t('checkUpdate') }}</el-button>
+                  <el-button
+                      type="primary"
+                      :loading="updateTriggerLoading"
+                      :disabled="!hasUpdate || !updateWebhookReady"
+                      @click="runUpdate"
+                  >
+                    {{ $t('clickUpdate') }}
                   </el-button>
-                </el-badge>
+                </div>
               </div>
               <div class="concerning-item">
                 <span>{{ $t('community') }} : </span>
@@ -763,15 +775,19 @@ import loading from "@/components/loading/index.vue";
 import {getTextWidth} from "@/utils/text.js";
 import {fileToBase64} from "@/utils/file-utils.js"
 import {useI18n} from 'vue-i18n';
-import axios from "axios";
+import {checkUpdate, triggerUpdate, versionInfo} from "@/request/update.js";
 
 defineOptions({
   name: 'sys-setting'
 })
 
-const currentVersion = 'v2.9.0'
+const currentVersion = ref('unknown')
+const currentReleaseUrl = ref('https://github.com/jhupo/temp-mail-server/tags')
+const latestVersion = ref('')
+const updateChecking = ref(false)
+const updateTriggerLoading = ref(false)
+const updateWebhookReady = ref(false)
 const hasUpdate = ref(false)
-let getUpdateErrorCount = 1;
 const {t, locale} = useI18n();
 const firstLoading = ref(true)
 const backgroundImage = ref('')
@@ -873,6 +889,7 @@ const tgMsgTextOption = [{label: t('show'), value: 'show'}, {label: t('hide'), v
 const tgMsgLabelWidth = computed(() => locale.value === 'en' ? '120px' : '100px');
 
 getSettings()
+loadVersionInfo()
 getUpdate()
 
 function getSettings() {
@@ -891,6 +908,18 @@ function getSettings() {
     resetNoticeForm()
     resetAddS3Form()
     resetEmailPrefix()
+  })
+}
+
+function loadVersionInfo() {
+  versionInfo().then(data => {
+    currentVersion.value = data.displayVersion || data.version || 'unknown'
+    if (data.releaseUrl) {
+      currentReleaseUrl.value = data.releaseUrl
+    }
+    updateWebhookReady.value = !!data.updateWebhookConfigured
+  }).catch((e) => {
+    console.error('获取版本信息失败：', e)
   })
 }
 
@@ -942,16 +971,64 @@ const resendList = computed(() => {
 
 
 function getUpdate() {
-  if (getUpdateErrorCount > 5 || !getUpdateErrorCount) return
-  axios.get('https://api.github.com/repos/maillab/cloud-mail/releases/latest').then(({data}) => {
-    hasUpdate.value = data.name !== currentVersion
-    getUpdateErrorCount = 0
+  if (updateChecking.value) return
+  updateChecking.value = true
+  checkUpdate().then(data => {
+    hasUpdate.value = !!data.hasUpdate
+    latestVersion.value = data.latest?.display || data.latest?.tag || data.latest?.name || ''
+    if (data.latest?.url) {
+      currentReleaseUrl.value = data.latest.url
+    }
+    if (data.current?.displayVersion) {
+      currentVersion.value = data.current.displayVersion
+    }
+    if (typeof data.current?.updateWebhookConfigured !== 'undefined') {
+      updateWebhookReady.value = !!data.current.updateWebhookConfigured
+    }
   }).catch(e => {
-    getUpdateErrorCount++
-    setTimeout(() => {
-      getUpdate()
-    }, 2000)
     console.error('检查更新失败：', e)
+    ElMessage({
+      message: t('updateCheckFailed'),
+      type: "error",
+      plain: true
+    })
+  }).finally(() => {
+    updateChecking.value = false
+  })
+}
+
+function runUpdate() {
+  if (updateTriggerLoading.value) return
+  if (!updateWebhookReady.value) {
+    ElMessage({
+      message: t('updateNotConfigured'),
+      type: "warning",
+      plain: true
+    })
+    return
+  }
+  ElMessageBox.confirm(t('updateConfirm'), {
+    confirmButtonText: t('confirm'),
+    cancelButtonText: t('cancel'),
+    type: 'warning'
+  }).then(() => {
+    updateTriggerLoading.value = true
+    triggerUpdate({target: 'latest'}).then(() => {
+      ElMessage({
+        message: t('updateQueued'),
+        type: "success",
+        plain: true
+      })
+    }).catch((e) => {
+      const msg = e?.message || t('sendFailMsg')
+      ElMessage({
+        message: msg,
+        type: "error",
+        plain: true
+      })
+    }).finally(() => {
+      updateTriggerLoading.value = false
+    })
   })
 }
 

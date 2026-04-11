@@ -33,6 +33,14 @@ class Settings(BaseSettings):
     default_jwt_secret: str = Field(default="change_me_super_secret", alias="CLOUD_MAIL_JWT_SECRET")
     cloud_mail_domain: str = Field(default="", alias="CLOUD_MAIL_DOMAIN")
     session_prefix: str = Field(default="cloudmail:session:", alias="SESSION_PREFIX")
+    app_version: str = Field(default="dev", alias="APP_VERSION")
+    app_build_sha: str = Field(default="unknown", alias="APP_BUILD_SHA")
+    app_build_time: str = Field(default="", alias="APP_BUILD_TIME")
+    update_source_repo: str = Field(default="jhupo/temp-mail-server", alias="UPDATE_SOURCE_REPO")
+    update_check_url: str = Field(default="", alias="UPDATE_CHECK_URL")
+    update_webhook_url: str = Field(default="", alias="UPDATE_WEBHOOK_URL")
+    update_webhook_token: str = Field(default="", alias="UPDATE_WEBHOOK_TOKEN")
+    update_webhook_timeout: int = Field(default=15, alias="UPDATE_WEBHOOK_TIMEOUT")
 
     @property
     def frontend_dist_path(self) -> Path:

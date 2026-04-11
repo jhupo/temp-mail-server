@@ -16,6 +16,7 @@ from app.routers.auth import router as auth_router
 from app.routers.emails import router as emails_router
 from app.routers.internal import router as internal_router
 from app.routers.settings import router as settings_router
+from app.routers.update import router as update_router
 
 
 @asynccontextmanager
@@ -55,6 +56,7 @@ app.include_router(accounts_router)
 app.include_router(emails_router)
 app.include_router(admin_router)
 app.include_router(internal_router)
+app.include_router(update_router)
 
 
 frontend_dist = settings.frontend_dist_path
