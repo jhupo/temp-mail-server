@@ -4,12 +4,13 @@ services:
     container_name: cloud-mail-app
     restart: unless-stopped
     environment:
-      NO_D1_WARNING: "true"
-      CLOUD_MAIL_DOMAIN: "${CLOUD_MAIL_DOMAIN:-}"
+      API_HOST: "0.0.0.0"
+      API_PORT: "8000"
+      DATABASE_URL: "sqlite:////data/cloud-mail.db"
+      SMTP_GATEWAY_TOKEN: "${SMTP_GATEWAY_TOKEN:-change_me_gateway_token}"
       CLOUD_MAIL_ADMIN: "${CLOUD_MAIL_ADMIN:-superadmin@jhupo.com}"
       CLOUD_MAIL_JWT_SECRET: "${CLOUD_MAIL_JWT_SECRET:-change_me_super_secret}"
-      CLOUD_MAIL_ORM_LOG: "${CLOUD_MAIL_ORM_LOG:-false}"
-      SMTP_GATEWAY_TOKEN: "${SMTP_GATEWAY_TOKEN:-change_me_gateway_token}"
+      CLOUD_MAIL_DOMAIN: "${CLOUD_MAIL_DOMAIN:-}"
     expose:
       - "8000"
     volumes:

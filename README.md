@@ -1,21 +1,25 @@
 # Cloud Mail VPS Edition
 
-This repository now uses the original `maillab/cloud-mail` frontend and backend layout directly:
+This repository now uses the original `maillab/cloud-mail` frontend directly, but the runtime backend has been switched to Python for VPS deployment.
 
 - frontend: `/mail-vue`
-- backend: `/mail-worker`
+- reference worker source: `/mail-worker`
+- runtime backend: `/app`
 
-The target direction is:
+Current direction:
 
-- keep the original cloud-mail frontend and backend structure
+- keep the original cloud-mail frontend
+- replace the runtime backend with Python
 - run on a VPS with Docker
-- replace Cloudflare-hosted persistence/runtime dependencies with server-side equivalents
+- receive SMTP on `25` / `587`
+- expose web on `80` / `443`
 
 ## Current VPS baseline
 
-- worker runtime: `wrangler dev --local`
-- local persistent runtime state mounted to `/data`
-- frontend built from `mail-vue` and served by the worker assets binding
+- Python backend: FastAPI
+- local SQLite database at `/data/cloud-mail.db`
+- frontend built from `mail-vue`
+- SMTP gateway forwards inbound mail to Python backend over HTTP
 
 ## Quick start
 
@@ -32,25 +36,20 @@ http://127.0.0.1
 
 ## Environment
 
-The Docker entrypoint injects runtime values into `mail-worker/wrangler-vps.toml`.
-
 Available variables:
 
 - `CLOUD_MAIL_DOMAIN` comma-separated public mail domains
 - `CLOUD_MAIL_ADMIN` admin account email
 - `CLOUD_MAIL_JWT_SECRET` JWT signing secret
-- `CLOUD_MAIL_ORM_LOG` enable ORM logging (`true` / `false`)
+- `CLOUD_MAIL_ORM_LOG` reserved for future compatibility
 - `SMTP_GATEWAY_TOKEN` shared secret between SMTP gateway and app
 
 ## Current note
 
 This commit intentionally resets the repository to the upstream cloud-mail code organization first.
-Current VPS deployment skeleton now includes:
+Current VPS deployment skeleton includes:
 
-- `cloud-mail-app` for the upstream worker app
+- `cloud-mail-app` Python backend
 - `smtp-gateway` for SMTP receive on `25` / `587`
 - `web` reverse proxy on `80` / `443`
-- worker runtime still uses `wrangler dev --local`
-- runtime state persists in Docker volume `/data`
-
-The next iteration continues replacing Cloudflare-specific storage and runtime assumptions with VPS-native implementations while preserving the original API/UI model.
+- runtime state persisted in Docker volume `/data`
