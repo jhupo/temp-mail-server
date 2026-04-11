@@ -1,4 +1,4 @@
-const zh = {
+﻿const zh = {
     inbox: '收件箱',
     drafts: '草稿箱',
     sent: '已发送',
@@ -158,7 +158,7 @@ const zh = {
     forwardingRules: '转发规则',
     forwardAll: '全部转发',
     rules: '规则转发',
-    verificationSetting: '验证设置',
+    turnstileSetting: 'Turnstile 人机验证',
     signUpVerification: '注册验证',
     addEmailVerification: '添加验证',
     about: '关于',
@@ -168,12 +168,12 @@ const zh = {
     addResendTokenDesc: '输入内容添加，不填则删除',
     addOsDomain: '添加域名',
     domainDesc: '域名',
-    addVerificationSecret: '设置验证密钥',
+    addTurnstileSecret: '添加 Turnstile 密钥',
     backgroundTitle: '设置背景',
     tgBotDesc: '可以将接收的邮件转发到Tg机器人',
     tgBotToken: '机器人 token',
     toBotTokenDesc: '用户 chat_id 多个用,分开',
-    otherEmailDesc: '可以将邮件转到其他服务商邮箱，需要先完成地址验证',
+    otherEmailDesc: '可以将邮件转到其他服务商邮箱，需要在cloudflare验证邮箱',
     otherEmailInputDesc: '多个邮箱用, 分开',
     forwardingRulesDesc: '规则转发只会转发设置邮箱所接收的邮件',
     ruleEmailsInputDesc: '多个邮箱用, 分开',
@@ -264,7 +264,7 @@ const zh = {
     backgroundWarning: '图片文件大小会影响网站加载速度',
     rulesVerify: '规则',
     rulesVerifyTitle: 'IP 每天使用 {count} 次后触发',
-    botVerifyMsg: '请完成验证',
+    botVerifyMsg: '请完成人机验证',
     noticeTitle: '网站公告',
     noticePopup: '登录弹窗',
     icon: '图标',
@@ -278,7 +278,7 @@ const zh = {
     width: '宽度',
     titleDesc: '标题',
     noticeContentDesc: '公告内容，支持HTML',
-    verifyModuleFailed: '验证模块加载失败，请刷新页面',
+    verifyModuleFailed: '人机验证模块加载失败，请刷新页面',
     popUp: '弹出',
     noRecipientTitle: '无人收件',
     noRecipientDesc: '即使没有注册的邮箱也能收到邮件',
@@ -301,7 +301,7 @@ const zh = {
     selectContacts: '选中',
     forcePathStyleDesc: '路径样式访问，一些自建的对象存储需要打开',
     storageType: '存储类型',
-    customDomainDesc: '自定义域名',
+    customDomainDesc: 'Worker 自定义域',
     show: '显示',
     hide: '隐藏',
     onlyName: '仅名字',
@@ -319,7 +319,7 @@ const zh = {
     setRole: '设置权限',
     adminDeleteUser: '删除用户',
     banUser: '封禁用户',
-    enableUser: '启用用户',
+    enableUser: '启动用户',
     restoreUser: '恢复用户',
     searchUser: '搜索用户',
     searchEmail: '搜索邮箱',
@@ -327,3 +327,4 @@ const zh = {
     userEmail: '用户邮箱'
 }
 export default zh
+

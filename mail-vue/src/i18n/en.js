@@ -159,6 +159,7 @@
     forwardAll: 'All',
     rules: 'Rules',
     verificationSetting: 'Verification',
+    turnstileSetting: 'Verification',
     signUpVerification: 'Sign Up Verification',
     addEmailVerification: 'Add Email Verification',
     about: 'About',
@@ -169,6 +170,7 @@
     addOsDomain: 'Add Domain',
     domainDesc: 'Domain',
     addVerificationSecret: 'Set verification secret',
+    addTurnstileSecret: 'Set verification secret',
     backgroundTitle: 'Change Background',
     tgBotDesc: 'Forward received emails to a Telegram bot',
     tgBotToken: 'Bot token',
@@ -328,4 +330,6 @@
 }
 
 export default en
+
+
 

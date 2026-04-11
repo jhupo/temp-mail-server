@@ -176,6 +176,9 @@ def perm_keys(user: User) -> list[str]:
 
 def setting_payload(setting: Setting) -> dict:
     domain_list = [f"@{domain}" for domain in split_domains(setting.allowed_domains)]
+    resend_tokens = json.loads(setting.resend_tokens or "{}")
+    if not resend_tokens and setting.resend_token:
+        resend_tokens = {"default": setting.resend_token}
     return {
         "title": setting.title,
         "register": setting.register,
@@ -186,14 +189,18 @@ def setting_payload(setting: Setting) -> dict:
         "addEmailVerify": setting.add_email_verify,
         "registerVerify": setting.register_verify,
         "send": setting.send,
+        "noRecipient": setting.no_recipient,
         "r2Domain": setting.r2_domain,
         "siteKey": setting.site_key,
+        "secretKey": setting.secret_key,
         "background": setting.background,
         "loginOpacity": setting.login_opacity / 100,
         "domainList": domain_list,
         "regKey": setting.reg_key,
         "regVerifyOpen": False,
         "addVerifyOpen": False,
+        "addVerifyCount": setting.add_verify_count,
+        "regVerifyCount": setting.reg_verify_count,
         "noticeTitle": setting.notice_title,
         "noticeContent": setting.notice_content,
         "noticeType": setting.notice_type,
@@ -207,10 +214,30 @@ def setting_payload(setting: Setting) -> dict:
         "linuxdoCallbackUrl": "",
         "linuxdoSwitch": False,
         "minEmailPrefix": setting.min_email_prefix,
+        "emailPrefixFilter": json.loads(setting.email_prefix_filter or "[]"),
         "projectLink": bool(setting.project_link),
         "allowedDomains": split_domains(setting.allowed_domains),
         "resendConfigured": bool(setting.resend_token),
-        "sendMode": "resend" if resend_enabled(setting.resend_token) else "record",
+        "resendTokens": resend_tokens,
+        "bucket": setting.bucket,
+        "endpoint": setting.endpoint,
+        "region": setting.region,
+        "s3AccessKey": setting.s3_access_key,
+        "s3SecretKey": setting.s3_secret_key,
+        "forcePathStyle": setting.force_path_style,
+        "storageType": setting.storage_type,
+        "tgBotStatus": setting.tg_bot_status,
+        "tgBotToken": setting.tg_bot_token,
+        "customDomain": setting.custom_domain,
+        "tgChatId": setting.tg_chat_id,
+        "tgMsgFrom": setting.tg_msg_from,
+        "tgMsgText": setting.tg_msg_text,
+        "tgMsgTo": setting.tg_msg_to,
+        "forwardStatus": setting.forward_status,
+        "forwardEmail": setting.forward_email,
+        "ruleType": setting.rule_type,
+        "ruleEmail": setting.rule_email,
+        "sendMode": "resend" if resend_tokens else "record",
     }
 
 

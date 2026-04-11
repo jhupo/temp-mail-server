@@ -11,6 +11,7 @@ import dkim
 import httpx
 
 from app.config import settings
+from app.domain_utils import split_domains
 
 
 def smtp_relay_enabled() -> bool:
@@ -36,6 +37,21 @@ def send_outbound_email(sender_email: str, recipients: list[str], subject: str, 
         send_via_direct_mx(sender_email, recipients, subject, text_body, html_body)
         return
     raise RuntimeError("no outbound delivery method is configured")
+
+
+def pick_resend_token(sender_email: str, resend_tokens: dict[str, str] | None) -> str | None:
+    if not resend_tokens:
+        return None
+    sender_domain = sender_email.rsplit("@", 1)[-1].strip().lower()
+    best_match = ""
+    best_token = None
+    for domain, token in resend_tokens.items():
+        normalized = str(domain).strip().lower()
+        if sender_domain == normalized or sender_domain.endswith(f".{normalized}"):
+            if len(normalized) > len(best_match):
+                best_match = normalized
+                best_token = token
+    return best_token
 
 
 def send_via_resend(token: str, sender_email: str, recipients: list[str], subject: str, text_body: str, html_body: str) -> None:

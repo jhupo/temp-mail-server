@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.api_common import email_payload, fail, get_db, get_setting, ok, require_user
 from app.models import Account, IncomingEmail
-from app.outbound_mail import resend_enabled, send_outbound_email
+from app.outbound_mail import pick_resend_token, resend_enabled, send_outbound_email
 
 router = APIRouter()
 
@@ -123,9 +123,10 @@ def email_send(payload: dict = Body(...), db: Session = Depends(get_db), authori
     html_body = payload.get("content") or ""
     status = 2
     setting = get_setting(db)
-    if resend_enabled(setting.resend_token):
+    resend_token = pick_resend_token(account.email, json.loads(setting.resend_tokens or "{}")) or setting.resend_token
+    if resend_enabled(resend_token):
         try:
-            send_outbound_email(account.email, recipients, subject, text_body, html_body, resend_token=setting.resend_token)
+            send_outbound_email(account.email, recipients, subject, text_body, html_body, resend_token=resend_token)
         except Exception as exc:
             status = 7
             row = IncomingEmail(
