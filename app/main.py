@@ -53,11 +53,7 @@ def _domain_allowed(domain: str, allowed_domains: str | list[str] | None) -> boo
     if not normalized:
         return False
     for item in _split_domains(allowed_domains):
-        if item.startswith("*."):
-            suffix = item[2:]
-            if normalized.endswith(f".{suffix}") and normalized != suffix:
-                return True
-        elif normalized == item:
+        if normalized == item or normalized.endswith(f".{item}"):
             return True
     return False
 
