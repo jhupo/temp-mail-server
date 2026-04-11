@@ -12,7 +12,7 @@ from app.config import settings
 from app.database import SessionLocal
 from app.domain_utils import split_domains
 from app.models import Account, IncomingEmail, Role, Setting, User, UserSession
-from app.outbound_mail import direct_mx_enabled, smtp_relay_enabled
+from app.outbound_mail import resend_enabled
 from app.redis_client import get_redis
 
 
@@ -210,17 +210,7 @@ def setting_payload(setting: Setting) -> dict:
         "projectLink": bool(setting.project_link),
         "allowedDomains": split_domains(setting.allowed_domains),
         "resendConfigured": bool(setting.resend_token),
-        "smtpHost": settings.smtp_out_host,
-        "smtpPort": settings.smtp_out_port,
-        "smtpUsername": settings.smtp_out_username,
-        "smtpPassword": "",
-        "smtpUseTls": settings.smtp_out_use_tls,
-        "smtpUseSsl": settings.smtp_out_use_ssl,
-        "smtpFromEmail": settings.smtp_out_from_email,
-        "sendMode": "resend" if setting.resend_token else ("smtp" if smtp_relay_enabled() else ("direct-mx" if direct_mx_enabled() else "record")),
-        "directHeloHost": settings.direct_helo_host,
-        "dkimSelector": settings.dkim_selector,
-        "dkimDomain": settings.dkim_domain,
+        "sendMode": "resend" if resend_enabled(setting.resend_token) else "record",
     }
 
 

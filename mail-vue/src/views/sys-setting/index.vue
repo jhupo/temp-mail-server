@@ -105,31 +105,6 @@
               {{ setting.resendConfigured ? $t('enabled') : $t('disabled') }}
             </el-tag>
           </div>
-
-          <div class="row readonly" v-if="setting.sendMode === 'smtp'">
-            <span>SMTP Host</span>
-            <code>{{ setting.smtpHost || '-' }}</code>
-          </div>
-
-          <div class="row readonly" v-if="setting.sendMode === 'smtp'">
-            <span>SMTP From</span>
-            <code>{{ setting.smtpFromEmail || '-' }}</code>
-          </div>
-
-          <div class="row readonly" v-if="setting.sendMode === 'direct-mx'">
-            <span>Direct MX</span>
-            <code>Enabled on server</code>
-          </div>
-
-          <div class="row readonly" v-if="setting.sendMode === 'direct-mx'">
-            <span>HELO</span>
-            <code>{{ setting.directHeloHost || 'mail.freeloader.xyz' }}</code>
-          </div>
-
-          <div class="row readonly" v-if="setting.sendMode === 'direct-mx'">
-            <span>DKIM</span>
-            <code>{{ setting.dkimSelector || 'default' }}._domainkey.{{ setting.dkimDomain || '-' }}</code>
-          </div>
         </div>
       </section>
 
