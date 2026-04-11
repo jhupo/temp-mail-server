@@ -37,7 +37,7 @@ def account_add(payload: dict = Body(...), db: Session = Depends(get_db), author
 @router.get("/account/list")
 def account_list(db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
     user = require_user(db, authorization)
-    accounts = db.execute(select(Account).where(Account.user_id == user.user_id).order_by(Account.sort.desc(), Account.account_id.asc())).scalars().all()
+    accounts = db.execute(select(Account).where(Account.user_id == user.user_id, Account.is_del == 0).order_by(Account.sort.desc(), Account.account_id.asc())).scalars().all()
     return ok([account_payload(item) for item in accounts])
 
 
@@ -67,7 +67,7 @@ def account_delete(accountId: int = Query(...), db: Session = Depends(get_db), a
 def account_set_all_receive(payload: dict = Body(...), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
     user = require_user(db, authorization)
     target_id = int(payload.get("accountId", 0))
-    accounts = db.execute(select(Account).where(Account.user_id == user.user_id)).scalars().all()
+    accounts = db.execute(select(Account).where(Account.user_id == user.user_id, Account.is_del == 0)).scalars().all()
     found = False
     for item in accounts:
         if item.account_id == target_id:
@@ -84,7 +84,7 @@ def account_set_all_receive(payload: dict = Body(...), db: Session = Depends(get
 @router.put("/account/setAsTop")
 def account_set_top(payload: dict = Body(...), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
     user = require_user(db, authorization)
-    account = db.execute(select(Account).where(Account.account_id == int(payload.get("accountId", 0)), Account.user_id == user.user_id)).scalar_one_or_none()
+    account = db.execute(select(Account).where(Account.account_id == int(payload.get("accountId", 0)), Account.user_id == user.user_id, Account.is_del == 0)).scalar_one_or_none()
     if account is None:
         return fail("account not found", 404)
     account.sort = int(datetime.utcnow().timestamp())
