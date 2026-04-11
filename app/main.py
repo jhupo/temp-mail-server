@@ -539,6 +539,92 @@ def all_email_latest(emailId: int = Query(0), db: Session = Depends(get_db), aut
     return _ok([_email_payload(item, item.mail_from or "") for item in items])
 
 
+@app.post("/email/send")
+def email_send(payload: dict = Body(...), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    user = _require_user(db, authorization)
+    account = db.execute(select(Account).where(Account.account_id == int(payload.get("accountId", 0)), Account.user_id == user.user_id, Account.is_del == 0)).scalar_one_or_none()
+    if account is None:
+        return _fail("sender account not found", 404)
+    recipients = payload.get("receiveEmail") or []
+    if not recipients:
+        return _fail("empty recipient", 400)
+    row = IncomingEmail(
+        user_id=user.user_id,
+        account_id=account.account_id,
+        mail_from=account.email,
+        rcpt_to=recipients[0],
+        to_email=recipients[0],
+        subject=payload.get("subject") or "",
+        text_body=payload.get("text") or "",
+        html_body=payload.get("content") or "",
+        recipient=json.dumps([{"address": item} for item in recipients]),
+        name=account.name,
+        unread=1,
+        is_del=0,
+        type=1,
+        status=2,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _ok([_email_payload(row, user.email)])
+
+
+@app.get("/analysis/echarts")
+def analysis_echarts(db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    user = _require_user(db, authorization)
+    if user.type != 0:
+        return _fail("forbidden", 403)
+    emails = db.execute(select(IncomingEmail)).scalars().all()
+    users = db.execute(select(User)).scalars().all()
+    accounts = db.execute(select(Account)).scalars().all()
+    receive = [item for item in emails if item.type == 0]
+    send = [item for item in emails if item.type == 1]
+    today = datetime.utcnow().date().isoformat()
+    day_send_total = len([item for item in send if item.created_at.date().isoformat() == today])
+    sender_counter = {}
+    for item in receive:
+        key = item.mail_from or "unknown"
+        sender_counter[key] = sender_counter.get(key, 0) + 1
+    user_day = {}
+    for item in users:
+        key = item.create_time.date().isoformat()
+        user_day[key] = user_day.get(key, 0) + 1
+    receive_day = {}
+    send_day = {}
+    for item in receive:
+        key = item.created_at.date().isoformat()
+        receive_day[key] = receive_day.get(key, 0) + 1
+    for item in send:
+        key = item.created_at.date().isoformat()
+        send_day[key] = send_day.get(key, 0) + 1
+    return _ok({
+        "numberCount": {
+            "receiveTotal": len(receive),
+            "sendTotal": len(send),
+            "accountTotal": len([a for a in accounts if a.is_del == 0]),
+            "userTotal": len(users),
+            "normalReceiveTotal": len([e for e in receive if e.is_del == 0]),
+            "normalSendTotal": len([e for e in send if e.is_del == 0]),
+            "normalAccountTotal": len([a for a in accounts if a.is_del == 0]),
+            "normalUserTotal": len(users),
+            "delReceiveTotal": len([e for e in receive if e.is_del == 1]),
+            "delSendTotal": len([e for e in send if e.is_del == 1]),
+            "delAccountTotal": len([a for a in accounts if a.is_del == 1]),
+            "delUserTotal": 0,
+        },
+        "receiveRatio": {
+            "nameRatio": [{"name": key, "total": value} for key, value in sorted(sender_counter.items(), key=lambda item: item[1], reverse=True)[:10]]
+        },
+        "userDayCount": [{"date": key, "total": value} for key, value in sorted(user_day.items())],
+        "emailDayCount": {
+            "receiveDayCount": [{"date": key, "total": value} for key, value in sorted(receive_day.items())],
+            "sendDayCount": [{"date": key, "total": value} for key, value in sorted(send_day.items())],
+        },
+        "daySendTotal": day_send_total,
+    })
+
+
 @app.delete("/allEmail/delete")
 def all_email_delete(emailIds: str = Query(""), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
     user = _require_user(db, authorization)
