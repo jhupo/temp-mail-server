@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import Base, SessionLocal, engine
-from app.models import Account, IncomingEmail, Setting, User, UserSession
+from app.models import Account, IncomingEmail, RegKey, RegKeyUser, Role, Setting, User, UserSession
 
 
 def _hash(value: str) -> str:
@@ -190,11 +190,58 @@ def _ensure_default_admin(db: Session) -> None:
                 sort=0,
             )
         )
+        default_role = Role(
+            role_id=1,
+            name="User",
+            description="Default role",
+            sort=0,
+            is_default=1,
+            perm_ids=json.dumps([1, 2, 3]),
+            send_type="ban",
+            send_count=0,
+            account_count=0,
+            ban_email="[]",
+            avail_domain="[]",
+        )
+        db.add(default_role)
+        db.commit()
+    elif db.execute(select(Role).where(Role.role_id == 1)).scalar_one_or_none() is None:
+        db.add(
+            Role(
+                role_id=1,
+                name="User",
+                description="Default role",
+                sort=0,
+                is_default=1,
+                perm_ids=json.dumps([1, 2, 3]),
+                send_type="ban",
+                send_count=0,
+                account_count=0,
+                ban_email="[]",
+                avail_domain="[]",
+            )
+        )
         db.commit()
 
 
 def _user_by_email(db: Session, email: str) -> User | None:
     return db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+
+
+def _role_payload(role: Role) -> dict:
+    return {
+        "roleId": role.role_id,
+        "name": role.name,
+        "description": role.description or "",
+        "sort": role.sort,
+        "isDefault": role.is_default,
+        "permIds": json.loads(role.perm_ids or "[]"),
+        "sendType": role.send_type,
+        "sendCount": role.send_count,
+        "accountCount": role.account_count,
+        "banEmail": json.loads(role.ban_email or "[]"),
+        "availDomain": json.loads(role.avail_domain or "[]"),
+    }
 
 
 @asynccontextmanager
@@ -527,6 +574,292 @@ def all_email_list(emailId: int = Query(0), size: int = Query(50), db: Session =
     total = len(db.execute(select(IncomingEmail)).scalars().all())
     latest = _email_payload(items[0], user.email) if items else {"emailId": 0}
     return _ok({"list": [_email_payload(item, item.mail_from or "") for item in items], "total": total, "latestEmail": latest})
+
+
+@app.get("/role/permTree")
+def role_perm_tree(db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    _require_user(db, authorization)
+    return _ok([
+        {"permId": 1, "name": "Account", "permKey": "account:query", "children": []},
+        {"permId": 2, "name": "Send", "permKey": "email:send", "children": []},
+        {"permId": 3, "name": "Settings", "permKey": "setting:query", "children": []},
+        {"permId": 4, "name": "Users", "permKey": "user:query", "children": []},
+        {"permId": 5, "name": "Roles", "permKey": "role:query", "children": []},
+        {"permId": 6, "name": "RegKey", "permKey": "reg-key:query", "children": []},
+    ])
+
+
+@app.get("/role/list")
+def role_list_api(db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    _require_user(db, authorization)
+    roles = db.execute(select(Role).order_by(Role.sort.asc(), Role.role_id.asc())).scalars().all()
+    return _ok([_role_payload(role) for role in roles])
+
+
+@app.get("/role/selectUse")
+def role_select_use(db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    _require_user(db, authorization)
+    roles = db.execute(select(Role).order_by(Role.sort.asc(), Role.role_id.asc())).scalars().all()
+    return _ok([{"roleId": role.role_id, "name": role.name} for role in roles])
+
+
+@app.post("/role/add")
+def role_add(payload: dict = Body(...), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    _require_user(db, authorization)
+    role = Role(
+        name=payload.get("name") or "",
+        description=payload.get("description") or "",
+        sort=int(payload.get("sort") or 0),
+        is_default=0,
+        perm_ids=json.dumps(payload.get("permIds") or []),
+        send_type=payload.get("sendType") or "ban",
+        send_count=int(payload.get("sendCount") or 0),
+        account_count=int(payload.get("accountCount") or 0),
+        ban_email=json.dumps(payload.get("banEmail") or []),
+        avail_domain=json.dumps(payload.get("availDomain") or []),
+    )
+    db.add(role)
+    db.commit()
+    return _ok()
+
+
+@app.put("/role/set")
+def role_set(payload: dict = Body(...), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    _require_user(db, authorization)
+    role = db.execute(select(Role).where(Role.role_id == int(payload.get("roleId", 0)))).scalar_one_or_none()
+    if role is None:
+        return _fail("role not found", 404)
+    role.name = payload.get("name") or role.name
+    role.description = payload.get("description") or role.description
+    role.sort = int(payload.get("sort") or role.sort)
+    role.perm_ids = json.dumps(payload.get("permIds") or json.loads(role.perm_ids or "[]"))
+    role.send_type = payload.get("sendType") or role.send_type
+    role.send_count = int(payload.get("sendCount") or role.send_count)
+    role.account_count = int(payload.get("accountCount") or role.account_count)
+    role.ban_email = json.dumps(payload.get("banEmail") or json.loads(role.ban_email or "[]"))
+    role.avail_domain = json.dumps(payload.get("availDomain") or json.loads(role.avail_domain or "[]"))
+    db.commit()
+    return _ok()
+
+
+@app.put("/role/setDefault")
+def role_set_default(payload: dict = Body(...), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    _require_user(db, authorization)
+    role_id = int(payload.get("roleId", 0))
+    roles = db.execute(select(Role)).scalars().all()
+    for role in roles:
+        role.is_default = 1 if role.role_id == role_id else 0
+    db.commit()
+    return _ok()
+
+
+@app.delete("/role/delete")
+def role_delete(roleId: int = Query(...), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    _require_user(db, authorization)
+    role = db.execute(select(Role).where(Role.role_id == roleId)).scalar_one_or_none()
+    if role is None:
+        return _fail("role not found", 404)
+    db.delete(role)
+    db.commit()
+    return _ok()
+
+
+@app.get("/user/list")
+def user_list(num: int = Query(1), size: int = Query(15), email: str | None = Query(None), status: int = Query(-1), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    _require_user(db, authorization)
+    stmt = select(User).order_by(User.user_id.desc())
+    users = db.execute(stmt).scalars().all()
+    if email:
+        users = [u for u in users if email.lower() in u.email.lower()]
+    if status >= 0:
+        users = [u for u in users if u.status == status]
+    roles = {role.role_id: role for role in db.execute(select(Role)).scalars().all()}
+    rows = []
+    for user in users:
+        accounts = db.execute(select(Account).where(Account.user_id == user.user_id)).scalars().all()
+        inbox_count = len(db.execute(select(IncomingEmail).where(IncomingEmail.user_id == user.user_id, IncomingEmail.type == 0)).scalars().all())
+        send_count = len(db.execute(select(IncomingEmail).where(IncomingEmail.user_id == user.user_id, IncomingEmail.type == 1)).scalars().all())
+        role = roles.get(user.type)
+        rows.append({
+            "userId": user.user_id,
+            "email": user.email,
+            "receiveEmailCount": inbox_count,
+            "delReceiveEmailCount": 0,
+            "sendEmailCount": send_count,
+            "delSendEmailCount": 0,
+            "accountCount": len(accounts),
+            "delAccountCount": 0,
+            "createTime": user.create_time.isoformat() if user.create_time else "",
+            "status": user.status,
+            "isDel": 0,
+            "type": user.type,
+            "sendCount": user.send_count,
+            "sendAction": {"hasPerm": True, "sendType": role.send_type if role else "ban", "sendCount": role.send_count if role else 0},
+            "name": user.name,
+            "username": None,
+            "createIp": "",
+            "activeIp": "",
+            "activeTime": user.create_time.isoformat() if user.create_time else "",
+            "device": "",
+            "os": "",
+            "browser": "",
+            "avatar": "",
+            "trustLevel": "",
+        })
+    start = max((num - 1) * size, 0)
+    end = start + size
+    return _ok({"list": rows[start:end], "total": len(rows)})
+
+
+@app.post("/user/add")
+def user_add(payload: dict = Body(...), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    _require_user(db, authorization)
+    email = (payload.get("email") or "").strip().lower()
+    if not email or "@" not in email:
+        return _fail("invalid email", 400)
+    if _user_by_email(db, email):
+        return _fail("user already exists", 400)
+    user = User(email=email, password_hash=_hash_password(payload.get("password") or ""), name=email.split("@", 1)[0], type=int(payload.get("type") or 1), status=0)
+    db.add(user)
+    db.flush()
+    db.add(Account(email=email, name=user.name, user_id=user.user_id, sort=0))
+    db.commit()
+    return _ok()
+
+
+@app.put("/user/setPwd")
+def user_set_pwd(payload: dict = Body(...), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    _require_user(db, authorization)
+    user = db.execute(select(User).where(User.user_id == int(payload.get("userId", 0)))).scalar_one_or_none()
+    if user is None:
+        return _fail("user not found", 404)
+    user.password_hash = _hash_password(payload.get("password") or "")
+    db.commit()
+    return _ok()
+
+
+@app.put("/user/setStatus")
+def user_set_status(payload: dict = Body(...), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    _require_user(db, authorization)
+    user = db.execute(select(User).where(User.user_id == int(payload.get("userId", 0)))).scalar_one_or_none()
+    if user is None:
+        return _fail("user not found", 404)
+    user.status = int(payload.get("status", 0))
+    db.commit()
+    return _ok()
+
+
+@app.put("/user/setType")
+def user_set_type(payload: dict = Body(...), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    _require_user(db, authorization)
+    user = db.execute(select(User).where(User.user_id == int(payload.get("userId", 0)))).scalar_one_or_none()
+    if user is None:
+        return _fail("user not found", 404)
+    user.type = int(payload.get("type", 1))
+    db.commit()
+    return _ok()
+
+
+@app.delete("/user/delete")
+def user_delete(userIds: str = Query(""), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    _require_user(db, authorization)
+    ids = [int(item) for item in userIds.split(",") if item.strip().isdigit()]
+    rows = db.execute(select(User).where(User.user_id.in_(ids))).scalars().all()
+    for row in rows:
+        if row.type != 0:
+            db.delete(row)
+    db.commit()
+    return _ok()
+
+
+@app.put("/user/resetSendCount")
+def user_reset_send_count(payload: dict = Body(...), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    _require_user(db, authorization)
+    user = db.execute(select(User).where(User.user_id == int(payload.get("userId", 0)))).scalar_one_or_none()
+    if user is None:
+        return _fail("user not found", 404)
+    user.send_count = 0
+    db.commit()
+    return _ok()
+
+
+@app.put("/user/restore")
+def user_restore(payload: dict = Body(...), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    _require_user(db, authorization)
+    user = db.execute(select(User).where(User.user_id == int(payload.get("userId", 0)))).scalar_one_or_none()
+    if user is None:
+        return _fail("user not found", 404)
+    user.status = 0
+    db.commit()
+    return _ok()
+
+
+@app.get("/user/allAccount")
+def user_all_account(userId: int = Query(...), num: int = Query(1), size: int = Query(10), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    _require_user(db, authorization)
+    accounts = db.execute(select(Account).where(Account.user_id == userId).order_by(Account.account_id.desc())).scalars().all()
+    start = max((num - 1) * size, 0)
+    end = start + size
+    rows = [{"accountId": item.account_id, "email": item.email, "isDel": item.is_del} for item in accounts]
+    return _ok({"list": rows[start:end], "total": len(rows)})
+
+
+@app.delete("/user/deleteAccount")
+def user_delete_account(accountId: int = Query(...), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    _require_user(db, authorization)
+    account = db.execute(select(Account).where(Account.account_id == accountId)).scalar_one_or_none()
+    if account is None:
+        return _fail("account not found", 404)
+    account.is_del = 1
+    db.commit()
+    return _ok()
+
+
+@app.get("/regKey/list")
+def reg_key_list(code: str | None = Query(None), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    _require_user(db, authorization)
+    roles = {role.role_id: role for role in db.execute(select(Role)).scalars().all()}
+    rows = db.execute(select(RegKey).order_by(RegKey.reg_key_id.desc())).scalars().all()
+    if code:
+        rows = [row for row in rows if code in row.code]
+    return _ok([{"regKeyId": row.reg_key_id, "code": row.code, "count": row.count, "roleName": roles.get(row.role_id).name if roles.get(row.role_id) else "User", "expireTime": row.expire_time.isoformat() if row.expire_time else None} for row in rows])
+
+
+@app.post("/regKey/add")
+def reg_key_add(payload: dict = Body(...), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    _require_user(db, authorization)
+    row = RegKey(code=payload.get("code") or "", count=int(payload.get("count") or 1), role_id=int(payload.get("roleId") or 1), expire_time=None)
+    db.add(row)
+    db.commit()
+    return _ok()
+
+
+@app.delete("/regKey/delete")
+def reg_key_delete(regKeyIds: str = Query(""), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    _require_user(db, authorization)
+    ids = [int(item) for item in regKeyIds.split(",") if item.strip().isdigit()]
+    rows = db.execute(select(RegKey).where(RegKey.reg_key_id.in_(ids))).scalars().all()
+    for row in rows:
+        db.delete(row)
+    db.commit()
+    return _ok()
+
+
+@app.delete("/regKey/clearNotUse")
+def reg_key_clear_not_use(db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    _require_user(db, authorization)
+    rows = db.execute(select(RegKey).where(RegKey.count <= 0)).scalars().all()
+    for row in rows:
+        db.delete(row)
+    db.commit()
+    return _ok()
+
+
+@app.get("/regKey/history")
+def reg_key_history(regKeyId: int = Query(...), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    _require_user(db, authorization)
+    rows = db.execute(select(RegKeyUser).where(RegKeyUser.reg_key_id == regKeyId).order_by(RegKeyUser.id.desc())).scalars().all()
+    return _ok([{"email": row.email, "createTime": row.create_time.isoformat() if row.create_time else ""} for row in rows])
 
 
 @app.get("/allEmail/latest")

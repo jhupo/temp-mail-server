@@ -96,3 +96,39 @@ class IncomingEmail(Base):
     type: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     status: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
+class Role(Base):
+    __tablename__ = "role"
+
+    role_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    sort: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    is_default: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    perm_ids: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    send_type: Mapped[str] = mapped_column(String(32), default="ban", nullable=False)
+    send_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    account_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    ban_email: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    avail_domain: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+
+
+class RegKey(Base):
+    __tablename__ = "reg_key"
+
+    reg_key_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    role_id: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    expire_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    create_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class RegKeyUser(Base):
+    __tablename__ = "reg_key_user"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    reg_key_id: Mapped[int] = mapped_column(Integer, ForeignKey("reg_key.reg_key_id", ondelete="CASCADE"), index=True)
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    create_time: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
