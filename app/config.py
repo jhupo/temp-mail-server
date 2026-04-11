@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     direct_send_enabled: bool = Field(default=False, alias="DIRECT_SEND_ENABLED")
     direct_helo_host: str = Field(default="", alias="DIRECT_HELO_HOST")
     dkim_selector: str = Field(default="default", alias="DKIM_SELECTOR")
+    dkim_domain: str = Field(default="", alias="DKIM_DOMAIN")
     dkim_private_key_path: str = Field(default="", alias="DKIM_PRIVATE_KEY_PATH")
     default_admin_email: str = Field(default="superadmin@jhupo.com", alias="CLOUD_MAIL_ADMIN")
     default_admin_password: str = Field(default="JIang521.", alias="CLOUD_MAIL_ADMIN_PASSWORD")

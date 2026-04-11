@@ -17,7 +17,7 @@ def smtp_relay_enabled() -> bool:
 
 
 def direct_mx_enabled() -> bool:
-    return bool(settings.direct_send_enabled and settings.direct_helo_host and settings.dkim_selector and settings.dkim_private_key_path)
+    return bool(settings.direct_send_enabled and settings.direct_helo_host and settings.dkim_selector and settings.dkim_private_key_path and settings.dkim_domain)
 
 
 def send_outbound_email(sender_email: str, recipients: list[str], subject: str, text_body: str, html_body: str) -> None:
@@ -95,13 +95,13 @@ def resolve_mx_hosts(domain: str) -> list[str]:
 
 def sign_message(message: EmailMessage, sender_email: str) -> bytes:
     private_key = Path(settings.dkim_private_key_path).read_bytes()
-    sender_domain = sender_email.rsplit("@", 1)[-1].encode("utf-8")
+    signing_domain = (settings.dkim_domain or sender_email.rsplit("@", 1)[-1]).strip().lower().encode("utf-8")
     selector = settings.dkim_selector.encode("utf-8")
     raw = message.as_bytes()
     signature = dkim.sign(
         raw,
         selector=selector,
-        domain=sender_domain,
+        domain=signing_domain,
         privkey=private_key,
         include_headers=[b"from", b"to", b"subject", b"reply-to"],
         canonicalize=(b"relaxed", b"relaxed"),
