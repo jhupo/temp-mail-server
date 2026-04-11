@@ -105,6 +105,35 @@ def _setting_payload(setting: Setting) -> dict:
     }
 
 
+def _primary_domain(setting: Setting) -> str:
+    domains = _split_domains(setting.allowed_domains)
+    return domains[0] if domains else ""
+
+
+def _email_payload(email: IncomingEmail, user_email: str = "") -> dict:
+    return {
+        "emailId": email.id,
+        "sendEmail": email.mail_from or "",
+        "name": email.name or (email.mail_from or "").split("@", 1)[0],
+        "accountId": email.account_id or 0,
+        "userId": email.user_id or 0,
+        "subject": email.subject or "",
+        "text": email.text_body or "",
+        "content": email.html_body or "",
+        "recipient": email.recipient or json.dumps([{"address": email.rcpt_to}]),
+        "toEmail": email.to_email or email.rcpt_to,
+        "type": email.type,
+        "status": email.status,
+        "unread": email.unread,
+        "createTime": email.created_at.isoformat() if email.created_at else "",
+        "isDel": email.is_del,
+        "userEmail": user_email,
+        "isStar": email.is_star,
+        "message": "",
+        "attList": [],
+    }
+
+
 def _ok(data=None):
     return {"code": 200, "message": "success", "data": data}
 
@@ -164,6 +193,10 @@ def _ensure_default_admin(db: Session) -> None:
         db.commit()
 
 
+def _user_by_email(db: Session, email: str) -> User | None:
+    return db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     Base.metadata.create_all(bind=engine)
@@ -206,6 +239,40 @@ def logout(db: Session = Depends(get_db), authorization: str | None = Header(def
         db.execute(delete(UserSession).where(UserSession.token_hash == _hash(token)))
         db.commit()
     return _ok()
+
+
+@app.post("/register")
+def register(payload: dict = Body(...), db: Session = Depends(get_db)):
+    setting = _get_setting(db)
+    if setting.register != 0:
+        return _fail("register disabled", 403)
+    email = (payload.get("email") or "").strip().lower()
+    password = payload.get("password") or ""
+    if not email or "@" not in email:
+        return _fail("invalid email", 400)
+    local_part, domain = email.split("@", 1)
+    if len(local_part) < max(setting.min_email_prefix, 1):
+        return _fail("email prefix too short", 400)
+    if domain not in _split_domains(setting.allowed_domains):
+        return _fail("domain not allowed", 400)
+    if _user_by_email(db, email):
+        return _fail("account already exists", 400)
+    user = User(
+        email=email,
+        password_hash=_hash_password(password),
+        name=local_part,
+        type=1,
+        status=0,
+    )
+    db.add(user)
+    db.flush()
+    account = Account(email=email, name=local_part, user_id=user.user_id, sort=0)
+    db.add(account)
+    db.flush()
+    token = secrets.token_urlsafe(32)
+    db.add(UserSession(user_id=user.user_id, token_hash=_hash(token)))
+    db.commit()
+    return _ok({"token": token, "regVerifyOpen": False})
 
 
 @app.get("/my/loginUserInfo")
@@ -276,9 +343,17 @@ def setting_set(payload: dict = Body(...), db: Session = Depends(get_db), author
 @app.post("/account/add")
 def account_add(payload: dict = Body(...), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
     user = _require_user(db, authorization)
+    setting = _get_setting(db)
+    if setting.add_email != 0:
+        return _fail("add account disabled", 403)
     email = (payload.get("email") or "").strip().lower()
     if not email or "@" not in email:
         return _fail("invalid email", 400)
+    local_part, domain = email.split("@", 1)
+    if domain not in _split_domains(setting.allowed_domains):
+        return _fail("domain not allowed", 400)
+    if len(local_part) < max(setting.min_email_prefix, 1):
+        return _fail("email prefix too short", 400)
     account = Account(email=email, name=email.split("@", 1)[0], user_id=user.user_id, sort=int(datetime.utcnow().timestamp()))
     db.add(account)
     db.commit()
@@ -289,8 +364,238 @@ def account_add(payload: dict = Body(...), db: Session = Depends(get_db), author
 @app.get("/account/list")
 def account_list(db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
     user = _require_user(db, authorization)
-    accounts = db.execute(select(Account).where(Account.user_id == user.user_id).order_by(Account.sort.asc(), Account.account_id.asc())).scalars().all()
+    accounts = db.execute(select(Account).where(Account.user_id == user.user_id).order_by(Account.sort.desc(), Account.account_id.asc())).scalars().all()
     return _ok([_account_payload(item) for item in accounts])
+
+
+@app.put("/account/setName")
+def account_set_name(payload: dict = Body(...), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    user = _require_user(db, authorization)
+    account = db.execute(select(Account).where(Account.account_id == int(payload.get("accountId", 0)), Account.user_id == user.user_id)).scalar_one_or_none()
+    if account is None:
+        return _fail("account not found", 404)
+    account.name = payload.get("name") or account.name
+    db.commit()
+    return _ok()
+
+
+@app.delete("/account/delete")
+def account_delete(accountId: int = Query(...), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    user = _require_user(db, authorization)
+    account = db.execute(select(Account).where(Account.account_id == accountId, Account.user_id == user.user_id)).scalar_one_or_none()
+    if account is None:
+        return _fail("account not found", 404)
+    account.is_del = 1
+    db.commit()
+    return _ok()
+
+
+@app.put("/account/setAllReceive")
+def account_set_all_receive(payload: dict = Body(...), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    user = _require_user(db, authorization)
+    target_id = int(payload.get("accountId", 0))
+    accounts = db.execute(select(Account).where(Account.user_id == user.user_id)).scalars().all()
+    found = False
+    for item in accounts:
+        if item.account_id == target_id:
+            item.all_receive = 0 if item.all_receive else 1
+            found = True
+        else:
+            item.all_receive = 0
+    if not found:
+        return _fail("account not found", 404)
+    db.commit()
+    return _ok()
+
+
+@app.put("/account/setAsTop")
+def account_set_top(payload: dict = Body(...), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    user = _require_user(db, authorization)
+    account = db.execute(select(Account).where(Account.account_id == int(payload.get("accountId", 0)), Account.user_id == user.user_id)).scalar_one_or_none()
+    if account is None:
+        return _fail("account not found", 404)
+    account.sort = int(datetime.utcnow().timestamp())
+    db.commit()
+    return _ok()
+
+
+@app.get("/email/list")
+def email_list(
+    accountId: int = Query(...),
+    allReceive: int = Query(0),
+    emailId: int = Query(0),
+    size: int = Query(50),
+    type: int = Query(0),
+    db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+):
+    user = _require_user(db, authorization)
+    account_ids = [accountId]
+    if allReceive:
+        account_ids = [a.account_id for a in db.execute(select(Account).where(Account.user_id == user.user_id, Account.is_del == 0)).scalars().all()]
+    stmt = select(IncomingEmail).where(IncomingEmail.user_id == user.user_id, IncomingEmail.account_id.in_(account_ids), IncomingEmail.type == type, IncomingEmail.is_del == 0)
+    if emailId:
+        stmt = stmt.where(IncomingEmail.id < emailId)
+    items = db.execute(stmt.order_by(IncomingEmail.id.desc()).limit(size)).scalars().all()
+    total = len(db.execute(select(IncomingEmail).where(IncomingEmail.user_id == user.user_id, IncomingEmail.account_id.in_(account_ids), IncomingEmail.type == type, IncomingEmail.is_del == 0)).scalars().all())
+    latest = _email_payload(items[0], user.email) if items else {"emailId": 0}
+    return _ok({"list": [_email_payload(item, user.email) for item in items], "total": total, "latestEmail": latest})
+
+
+@app.get("/email/latest")
+def email_latest(
+    emailId: int = Query(0),
+    accountId: int = Query(...),
+    allReceive: int = Query(0),
+    db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+):
+    user = _require_user(db, authorization)
+    account_ids = [accountId]
+    if allReceive:
+        account_ids = [a.account_id for a in db.execute(select(Account).where(Account.user_id == user.user_id, Account.is_del == 0)).scalars().all()]
+    stmt = select(IncomingEmail).where(IncomingEmail.user_id == user.user_id, IncomingEmail.account_id.in_(account_ids), IncomingEmail.type == 0, IncomingEmail.is_del == 0, IncomingEmail.id > emailId)
+    items = db.execute(stmt.order_by(IncomingEmail.id.desc()).limit(20)).scalars().all()
+    return _ok([_email_payload(item, user.email) for item in items])
+
+
+@app.put("/email/read")
+def email_read(payload: dict = Body(...), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    user = _require_user(db, authorization)
+    ids = [int(item) for item in payload.get("emailIds", [])]
+    rows = db.execute(select(IncomingEmail).where(IncomingEmail.user_id == user.user_id, IncomingEmail.id.in_(ids))).scalars().all()
+    for row in rows:
+        row.unread = 1
+    db.commit()
+    return _ok()
+
+
+@app.delete("/email/delete")
+def email_delete(emailIds: str = Query(""), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    user = _require_user(db, authorization)
+    ids = [int(item) for item in emailIds.split(",") if item.strip().isdigit()]
+    rows = db.execute(select(IncomingEmail).where(IncomingEmail.user_id == user.user_id, IncomingEmail.id.in_(ids))).scalars().all()
+    for row in rows:
+        row.is_del = 1
+    db.commit()
+    return _ok()
+
+
+@app.post("/star/add")
+def star_add(payload: dict = Body(...), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    user = _require_user(db, authorization)
+    row = db.execute(select(IncomingEmail).where(IncomingEmail.user_id == user.user_id, IncomingEmail.id == int(payload.get("emailId", 0)))).scalar_one_or_none()
+    if row is None:
+        return _fail("email not found", 404)
+    row.is_star = 1
+    db.commit()
+    return _ok()
+
+
+@app.delete("/star/cancel")
+def star_cancel(emailId: int = Query(...), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    user = _require_user(db, authorization)
+    row = db.execute(select(IncomingEmail).where(IncomingEmail.user_id == user.user_id, IncomingEmail.id == emailId)).scalar_one_or_none()
+    if row is None:
+        return _fail("email not found", 404)
+    row.is_star = 0
+    db.commit()
+    return _ok()
+
+
+@app.get("/star/list")
+def star_list(emailId: int = Query(0), size: int = Query(50), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    user = _require_user(db, authorization)
+    stmt = select(IncomingEmail).where(IncomingEmail.user_id == user.user_id, IncomingEmail.is_star == 1, IncomingEmail.is_del == 0)
+    if emailId:
+        stmt = stmt.where(IncomingEmail.id < emailId)
+    items = db.execute(stmt.order_by(IncomingEmail.id.desc()).limit(size)).scalars().all()
+    total = len(db.execute(select(IncomingEmail).where(IncomingEmail.user_id == user.user_id, IncomingEmail.is_star == 1, IncomingEmail.is_del == 0)).scalars().all())
+    latest = _email_payload(items[0], user.email) if items else {"emailId": 0}
+    return _ok({"list": [_email_payload(item, user.email) for item in items], "total": total, "latestEmail": latest})
+
+
+@app.get("/allEmail/list")
+def all_email_list(emailId: int = Query(0), size: int = Query(50), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    user = _require_user(db, authorization)
+    if user.type != 0:
+        return _fail("forbidden", 403)
+    stmt = select(IncomingEmail)
+    if emailId:
+        stmt = stmt.where(IncomingEmail.id < emailId)
+    items = db.execute(stmt.order_by(IncomingEmail.id.desc()).limit(size)).scalars().all()
+    total = len(db.execute(select(IncomingEmail)).scalars().all())
+    latest = _email_payload(items[0], user.email) if items else {"emailId": 0}
+    return _ok({"list": [_email_payload(item, item.mail_from or "") for item in items], "total": total, "latestEmail": latest})
+
+
+@app.get("/allEmail/latest")
+def all_email_latest(emailId: int = Query(0), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    user = _require_user(db, authorization)
+    if user.type != 0:
+        return _fail("forbidden", 403)
+    stmt = select(IncomingEmail).where(IncomingEmail.id > emailId)
+    items = db.execute(stmt.order_by(IncomingEmail.id.desc()).limit(20)).scalars().all()
+    return _ok([_email_payload(item, item.mail_from or "") for item in items])
+
+
+@app.delete("/allEmail/delete")
+def all_email_delete(emailIds: str = Query(""), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    user = _require_user(db, authorization)
+    if user.type != 0:
+        return _fail("forbidden", 403)
+    ids = [int(item) for item in emailIds.split(",") if item.strip().isdigit()]
+    rows = db.execute(select(IncomingEmail).where(IncomingEmail.id.in_(ids))).scalars().all()
+    for row in rows:
+        row.is_del = 1
+    db.commit()
+    return _ok()
+
+
+@app.delete("/allEmail/batchDelete")
+def all_email_batch_delete(
+    sendName: str | None = Query(None),
+    subject: str | None = Query(None),
+    sendEmail: str | None = Query(None),
+    toEmail: str | None = Query(None),
+    db: Session = Depends(get_db),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+):
+    user = _require_user(db, authorization)
+    if user.type != 0:
+        return _fail("forbidden", 403)
+    stmt = select(IncomingEmail)
+    if sendName:
+        stmt = stmt.where(IncomingEmail.name.contains(sendName))
+    if subject:
+        stmt = stmt.where(IncomingEmail.subject.contains(subject))
+    if sendEmail:
+        stmt = stmt.where(IncomingEmail.mail_from.contains(sendEmail))
+    if toEmail:
+        stmt = stmt.where(IncomingEmail.to_email.contains(toEmail))
+    rows = db.execute(stmt).scalars().all()
+    for row in rows:
+        row.is_del = 1
+    db.commit()
+    return _ok()
+
+
+@app.put("/setting/setBackground")
+def setting_set_background(payload: dict = Body(...), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    _require_user(db, authorization)
+    setting = _get_setting(db)
+    setting.background = payload.get("background") or ""
+    db.commit()
+    return _ok(setting.background)
+
+
+@app.delete("/setting/deleteBackground")
+def setting_delete_background(db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    _require_user(db, authorization)
+    setting = _get_setting(db)
+    setting.background = ""
+    db.commit()
+    return _ok()
 
 
 @app.post("/internal/smtp/receive")
