@@ -1,38 +1,64 @@
 services:
-  cloud-mail-app:
+  tempmail-api:
     build: .
-    container_name: cloud-mail-app
+    container_name: tempmail-api
     restart: unless-stopped
+    command: ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     environment:
       API_HOST: "0.0.0.0"
       API_PORT: "8000"
-      DATABASE_URL: "sqlite:////data/cloud-mail.db"
+      DATABASE_URL: "${DATABASE_URL:-postgresql+psycopg://cloudmail:cloudmail@tempmail-postgres:5432/cloudmail}"
+      REDIS_URL: "${REDIS_URL:-redis://tempmail-redis:6379/0}"
       SMTP_GATEWAY_TOKEN: "${SMTP_GATEWAY_TOKEN:-change_me_gateway_token}"
       CLOUD_MAIL_ADMIN: "${CLOUD_MAIL_ADMIN:-superadmin@jhupo.com}"
+      CLOUD_MAIL_ADMIN_PASSWORD: "${CLOUD_MAIL_ADMIN_PASSWORD:-JIang521.}"
       CLOUD_MAIL_JWT_SECRET: "${CLOUD_MAIL_JWT_SECRET:-change_me_super_secret}"
       CLOUD_MAIL_DOMAIN: "${CLOUD_MAIL_DOMAIN:-}"
-    expose:
-      - "8000"
-    volumes:
-      - cloud_mail_data:/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      tempmail-postgres:
+        condition: service_healthy
+      tempmail-redis:
+        condition: service_started
 
-  smtp-gateway:
-    image: node:22-bookworm
-    container_name: cloud-mail-smtp
+  tempmail-smtp:
+    build: .
+    container_name: tempmail-smtp
     restart: unless-stopped
-    working_dir: /app
-    command: ["sh", "-lc", "npm install --legacy-peer-deps && npm run start"]
+    command: ["python", "-m", "app.smtp_server"]
     environment:
-      SMTP_GATEWAY_PORT: 25
-      SMTP_GATEWAY_API_BASE: "http://cloud-mail-app:8000"
+      SMTP_HOST: "0.0.0.0"
+      SMTP_PORT: "25"
+      SMTP_API_BASE: "http://tempmail-api:8000"
       SMTP_GATEWAY_TOKEN: "${SMTP_GATEWAY_TOKEN:-change_me_gateway_token}"
     ports:
       - "25:25"
-      - "587:25"
-    volumes:
-      - ./smtp-gateway:/app
     depends_on:
-      - cloud-mail-app
+      - tempmail-api
+
+  tempmail-postgres:
+    image: postgres:16
+    container_name: tempmail-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-cloudmail}"
+      POSTGRES_USER: "${POSTGRES_USER:-cloudmail}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-cloudmail}"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  tempmail-redis:
+    image: redis:7-alpine
+    container_name: tempmail-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
 
   web:
     image: caddy:2
@@ -46,9 +72,10 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - cloud-mail-app
+      - tempmail-api
 
 volumes:
-  cloud_mail_data:
+  postgres_data:
+  redis_data:
   caddy_data:
   caddy_config:

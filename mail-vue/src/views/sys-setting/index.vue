@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="settings-container">
     <div class="loading" :class="firstLoading ? 'loading-show' : 'loading-hide'">
       <loading/>
@@ -10,7 +10,7 @@
           <div class="settings-card">
             <div class="card-title">{{ $t('websiteSetting') }}</div>
             <div class="card-content">
-              <div class="setting-item">
+              <div class="setting-item" v-if="false">
                 <div><span>{{ $t('websiteReg') }}</span></div>
                 <div>
                   <el-switch @change="change" :before-change="beforeChange" :active-value="0" :inactive-value="1"
@@ -75,7 +75,7 @@
           </div>
 
           <!-- Personalization Settings Card -->
-          <div class="settings-card">
+          <div class="settings-card" v-if="false">
             <div class="card-title">{{ $t('customization') }}</div>
             <div class="card-content">
               <div class="setting-item">
@@ -124,7 +124,7 @@
           </div>
 
           <!-- Email Sending Settings Card -->
-          <div class="settings-card">
+          <div class="settings-card" v-if="false">
             <div class="card-title">{{ $t('emailSetting') }}</div>
             <div class="card-content">
               <div class="setting-item">
@@ -193,7 +193,7 @@
           </div>
 
           <!-- Object Storage Card -->
-          <div class="settings-card">
+          <div class="settings-card" v-if="false">
             <div class="card-title">{{ $t('oss') }}</div>
             <div class="card-content">
               <div class="r2domain-item">
@@ -266,9 +266,9 @@
             </div>
           </div>
 
-          <!-- Turnstile Verification Card -->
+          <!-- Verification Verification Card -->
           <div class="settings-card">
-            <div class="card-title">{{ $t('turnstileSetting') }}</div>
+            <div class="card-title">{{ $t('verificationSetting') }}</div>
             <div class="card-content">
               <div class="setting-item">
                 <div><span>{{ $t('signUpVerification') }}</span></div>
@@ -312,7 +312,7 @@
                 <div><span>Site Key</span></div>
                 <div class="bot-verify">
                   <span>{{ setting.siteKey }}</span>
-                  <el-button class="opt-button" size="small" type="primary" @click="turnstileShow = true">
+                  <el-button class="opt-button" size="small" type="primary" @click="verificationShow = true">
                     <Icon icon="lsicon:edit-outline" width="16" height="16"/>
                   </el-button>
                 </div>
@@ -321,7 +321,7 @@
                 <div><span>Secret Key</span></div>
                 <div class="bot-verify">
                   <span> {{ setting.secretKey }} </span>
-                  <el-button class="opt-button" size="small" type="primary" @click="turnstileShow = true">
+                  <el-button class="opt-button" size="small" type="primary" @click="verificationShow = true">
                     <Icon icon="lsicon:edit-outline" width="16" height="16"/>
                   </el-button>
                 </div>
@@ -413,7 +413,7 @@
           <el-button type="primary" :loading="settingLoading" @click="saveTitle">{{ $t('save') }}</el-button>
         </form>
       </el-dialog>
-      <el-dialog v-model="resendTokenFormShow" :title="$t('resendToken')" width="340" @closed="cleanResendTokenForm">
+      <el-dialog v-if="false" v-model="resendTokenFormShow" :title="$t('resendToken')" width="340" @closed="cleanResendTokenForm">
         <form>
           <el-select style="margin-bottom: 15px" v-model="resendTokenForm.domain" placeholder="Select">
             <el-option
@@ -427,19 +427,19 @@
           <el-button type="primary" :loading="settingLoading" @click="saveResendToken">{{ $t('save') }}</el-button>
         </form>
       </el-dialog>
-      <el-dialog v-model="r2DomainShow" :title="$t('addOsDomain')" width="340"
+      <el-dialog v-if="false" v-model="r2DomainShow" :title="$t('addOsDomain')" width="340"
                  @closed="r2DomainInput = setting.r2Domain">
         <form>
           <el-input type="text" :placeholder="$t('domainDesc')" v-model="r2DomainInput"/>
           <el-button type="primary" :loading="settingLoading" @click="saveR2domain">{{ $t('save') }}</el-button>
         </form>
       </el-dialog>
-      <el-dialog v-model="turnstileShow" :title="$t('addTurnstileSecret')" width="340"
-                 @closed="turnstileForm.secretKey = '';turnstileForm.siteKey = ''">
+      <el-dialog v-if="false" v-model="verificationShow" :title="$t('addVerificationSecret')" width="340"
+                 @closed="verificationForm.secretKey = '';verificationForm.siteKey = ''">
         <form>
-          <el-input type="text" placeholder="Site Key" v-model="turnstileForm.siteKey"/>
-          <el-input type="text" style="margin-top: 15px" placeholder="Secret Key" v-model="turnstileForm.secretKey"/>
-          <el-button type="primary" :loading="settingLoading" @click="saveTurnstileKey">{{ $t('save') }}</el-button>
+          <el-input type="text" placeholder="Site Key" v-model="verificationForm.siteKey"/>
+          <el-input type="text" style="margin-top: 15px" placeholder="Secret Key" v-model="verificationForm.secretKey"/>
+          <el-button type="primary" :loading="settingLoading" @click="saveVerificationKey">{{ $t('save') }}</el-button>
         </form>
       </el-dialog>
       <el-dialog
@@ -593,7 +593,7 @@
           </div>
         </template>
       </el-dialog>
-      <el-dialog class="resend-table" v-model="showResendList" :title="$t('resendTokenList')">
+      <el-dialog v-if="false" class="resend-table" v-model="showResendList" :title="$t('resendTokenList')">
         <el-table :data="resendList">
           <el-table-column :min-width="emailColumnWidth" property="key" :label="$t('domain')"
                            :show-overflow-tooltip="true"/>
@@ -766,7 +766,7 @@ const userStore = useUserStore();
 const editTitleShow = ref(false)
 const resendTokenFormShow = ref(false)
 const r2DomainShow = ref(false)
-const turnstileShow = ref(false)
+const verificationShow = ref(false)
 const tgSettingShow = ref(false)
 const noticePopupShow = ref(false)
 const thirdEmailShow = ref(false)
@@ -796,7 +796,7 @@ const resendTokenForm = reactive({
   domain: '',
   token: '',
 })
-const turnstileForm = reactive({
+const verificationForm = reactive({
   siteKey: '',
   secretKey: ''
 })
@@ -933,7 +933,7 @@ function getUpdate() {
     setTimeout(() => {
       getUpdate()
     }, 2000)
-    console.error('检查更新失败：', e)
+    console.error('妫€鏌ユ洿鏂板け璐ワ細', e)
   })
 }
 
@@ -1178,10 +1178,10 @@ function delBackground() {
   })
 }
 
-function saveTurnstileKey() {
+function saveVerificationKey() {
   const settingForm = {}
-  settingForm.siteKey = turnstileForm.siteKey
-  settingForm.secretKey = turnstileForm.secretKey
+  settingForm.siteKey = verificationForm.siteKey
+  settingForm.secretKey = verificationForm.secretKey
   editSetting(settingForm)
 }
 
@@ -1313,7 +1313,7 @@ function editSetting(settingForm, refreshStatus = true) {
     editTitleShow.value = false
     r2DomainShow.value = false
     resendTokenFormShow.value = false
-    turnstileShow.value = false
+    verificationShow.value = false
     tgSettingShow.value = false
     thirdEmailShow.value = false
     forwardRulesShow.value = false
@@ -1828,3 +1828,4 @@ form .el-button {
 .el-popper.is-dark {
 }
 </style>
+

@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import Base, SessionLocal, engine
 from app.models import Account, IncomingEmail, RegKey, RegKeyUser, Role, Setting, User, UserSession
+from app.redis_client import get_redis
 
 
 def _hash(value: str) -> str:
@@ -161,13 +162,64 @@ def _require_user(db: Session, authorization: str | None) -> User:
     token = (authorization or "").replace("Bearer ", "").strip()
     if not token:
         raise HTTPException(status_code=401, detail="missing token")
-    session = db.execute(select(UserSession).where(UserSession.token_hash == _hash(token))).scalar_one_or_none()
-    if session is None:
+    user_id = _get_session_user_id(token, db)
+    if user_id is None:
         raise HTTPException(status_code=401, detail="invalid token")
-    user = db.execute(select(User).where(User.user_id == session.user_id)).scalar_one_or_none()
+    user = db.execute(select(User).where(User.user_id == user_id)).scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=401, detail="invalid user")
     return user
+
+
+def _session_key(token: str) -> str:
+    return f"{settings.session_prefix}{_hash(token)}"
+
+
+def _save_session(db: Session, user_id: int, token: str) -> None:
+    token_hash = _hash(token)
+    try:
+        get_redis().set(_session_key(token), str(user_id))
+    except Exception:
+        pass
+    db.add(UserSession(user_id=user_id, token_hash=token_hash))
+
+
+def _delete_session(db: Session, token: str) -> None:
+    token_hash = _hash(token)
+    try:
+        get_redis().delete(_session_key(token))
+    except Exception:
+        pass
+    db.execute(delete(UserSession).where(UserSession.token_hash == token_hash))
+
+
+def _delete_user_sessions(db: Session, user_id: int) -> None:
+    sessions = db.execute(select(UserSession).where(UserSession.user_id == user_id)).scalars().all()
+    for session in sessions:
+        try:
+            get_redis().delete(f"{settings.session_prefix}{session.token_hash}")
+        except Exception:
+            pass
+    db.execute(delete(UserSession).where(UserSession.user_id == user_id))
+
+
+def _get_session_user_id(token: str, db: Session) -> int | None:
+    token_hash = _hash(token)
+    try:
+        cached = get_redis().get(_session_key(token))
+        if cached:
+            return int(cached)
+    except Exception:
+        pass
+
+    session = db.execute(select(UserSession).where(UserSession.token_hash == token_hash)).scalar_one_or_none()
+    if session is None:
+        return None
+    try:
+        get_redis().set(_session_key(token), str(session.user_id))
+    except Exception:
+        pass
+    return session.user_id
 
 
 def _ensure_default_admin(db: Session) -> None:
@@ -259,6 +311,16 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title="Cloud Mail Python Backend", lifespan=lifespan)
 
 
+@app.middleware("http")
+async def worker_api_compat(request, call_next):
+    path = request.scope.get("path", "")
+    if path == "/api":
+        request.scope["path"] = "/"
+    elif path.startswith("/api/"):
+        request.scope["path"] = path[4:]
+    return await call_next(request)
+
+
 @app.get("/healthz")
 def healthz():
     return {"ok": True}
@@ -274,7 +336,7 @@ def login(payload: dict = Body(...), db: Session = Depends(get_db)):
     if user is None or user.password_hash != _hash_password(password):
         return _fail("invalid email or password", 401)
     token = secrets.token_urlsafe(32)
-    db.add(UserSession(user_id=user.user_id, token_hash=_hash(token)))
+    _save_session(db, user.user_id, token)
     db.commit()
     return _ok({"token": token})
 
@@ -283,7 +345,7 @@ def login(payload: dict = Body(...), db: Session = Depends(get_db)):
 def logout(db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
     token = (authorization or "").replace("Bearer ", "").strip()
     if token:
-        db.execute(delete(UserSession).where(UserSession.token_hash == _hash(token)))
+        _delete_session(db, token)
         db.commit()
     return _ok()
 
@@ -317,7 +379,7 @@ def register(payload: dict = Body(...), db: Session = Depends(get_db)):
     db.add(account)
     db.flush()
     token = secrets.token_urlsafe(32)
-    db.add(UserSession(user_id=user.user_id, token_hash=_hash(token)))
+    _save_session(db, user.user_id, token)
     db.commit()
     return _ok({"token": token, "regVerifyOpen": False})
 
@@ -338,6 +400,38 @@ def login_user_info(db: Session = Depends(get_db), authorization: str | None = H
             "type": user.type,
         }
     )
+
+
+@app.put("/my/resetPassword")
+def my_reset_password(payload: dict = Body(...), db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    user = _require_user(db, authorization)
+    password = payload.get("password") or ""
+    if not password:
+        return _fail("password required", 400)
+    user.password_hash = _hash_password(password)
+    db.commit()
+    return _ok()
+
+
+@app.delete("/my/delete")
+def my_delete(db: Session = Depends(get_db), authorization: str | None = Header(default=None, alias="Authorization")):
+    user = _require_user(db, authorization)
+    if user.type == 0:
+        return _fail("admin cannot delete self", 403)
+    _delete_user_sessions(db, user.user_id)
+    db.delete(user)
+    db.commit()
+    return _ok()
+
+
+@app.post("/oauth/linuxDo/login")
+def oauth_linuxdo_login():
+    return _fail("oauth login is not enabled on the python backend", 403)
+
+
+@app.put("/oauth/bindUser")
+def oauth_bind_user():
+    return _fail("oauth login is not enabled on the python backend", 403)
 
 
 @app.get("/setting/query")

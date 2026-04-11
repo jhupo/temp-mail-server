@@ -1,4 +1,4 @@
-const en = {
+﻿const en = {
     inbox: 'Inbox',
     drafts: 'Drafts',
     sent: 'Sent',
@@ -158,7 +158,7 @@ const en = {
     forwardingRules: 'Forwarding Rules',
     forwardAll: 'All',
     rules: 'Rules',
-    turnstileSetting: 'Turnstile',
+    verificationSetting: 'Verification',
     signUpVerification: 'Sign Up Verification',
     addEmailVerification: 'Add Email Verification',
     about: 'About',
@@ -168,12 +168,12 @@ const en = {
     addResendTokenDesc: 'Input to add; leave empty to delete',
     addOsDomain: 'Add Domain',
     domainDesc: 'Domain',
-    addTurnstileSecret: 'Add turnstile secret',
+    addVerificationSecret: 'Set verification secret',
     backgroundTitle: 'Change Background',
     tgBotDesc: 'Forward received emails to a Telegram bot',
     tgBotToken: 'Bot token',
     toBotTokenDesc: 'Multiple user chat_ids, separated by commas',
-    otherEmailDesc: 'emails can be forwarded to external email, but must be verified via cloudflare',
+    otherEmailDesc: 'emails can be forwarded to external email after address verification',
     otherEmailInputDesc: 'Separate multiple email addresses with commas',
     forwardingRulesDesc: 'Rule-based forwarding only forwards emails received by the specified address',
     ruleEmailsInputDesc: 'Separate multiple email addresses with commas',
@@ -328,3 +328,4 @@ const en = {
 }
 
 export default en
+

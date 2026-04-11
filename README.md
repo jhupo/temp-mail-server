@@ -1,25 +1,37 @@
 # Cloud Mail VPS Edition
 
-This repository now uses the original `maillab/cloud-mail` frontend directly, but the runtime backend has been switched to Python for VPS deployment.
+This repository keeps the original `maillab/cloud-mail` frontend, but the runtime backend is now fully Python for VPS deployment.
 
 - frontend: `/mail-vue`
-- reference worker source: `/mail-worker`
-- runtime backend: `/app`
+- api backend: `/app`
+- smtp service: `/app/smtp_server.py`
 
-Current direction:
+## Current direction
 
 - keep the original cloud-mail frontend
-- replace the runtime backend with Python
+- replace the old Worker backend with Python
 - run on a VPS with Docker
-- receive SMTP on `25` / `587`
+- receive SMTP on `25`
 - expose web on `80` / `443`
+- persist state in PostgreSQL and Redis
 
 ## Current VPS baseline
 
 - Python backend: FastAPI
-- local SQLite database at `/data/cloud-mail.db`
+- Python SMTP service
+- PostgreSQL database
+- Redis session/cache service
 - frontend built from `mail-vue`
-- SMTP gateway forwards inbound mail to Python backend over HTTP
+
+## Runtime layout
+
+```text
+temp-mail-server
+├── app             Python FastAPI backend and SMTP service
+├── mail-vue        Vue frontend
+├── deploy          Caddy config
+└── docker-compose.yml
+```
 
 ## Quick start
 
@@ -40,16 +52,22 @@ Available variables:
 
 - `CLOUD_MAIL_DOMAIN` comma-separated public mail domains
 - `CLOUD_MAIL_ADMIN` admin account email
+- `CLOUD_MAIL_ADMIN_PASSWORD` admin password
 - `CLOUD_MAIL_JWT_SECRET` JWT signing secret
-- `CLOUD_MAIL_ORM_LOG` reserved for future compatibility
-- `SMTP_GATEWAY_TOKEN` shared secret between SMTP gateway and app
+- `DATABASE_URL` PostgreSQL connection URL
+- `REDIS_URL` Redis connection URL
+- `SMTP_GATEWAY_TOKEN` shared secret between SMTP and API
+- `SMTP_HOST` SMTP bind host
+- `SMTP_PORT` SMTP bind port
+- `SMTP_API_BASE` internal API base URL for SMTP delivery
 
 ## Current note
 
-This commit intentionally resets the repository to the upstream cloud-mail code organization first.
-Current VPS deployment skeleton includes:
+Current VPS deployment includes:
 
-- `cloud-mail-app` Python backend
-- `smtp-gateway` for SMTP receive on `25` / `587`
+- `tempmail-api` Python backend
+- `tempmail-smtp` Python SMTP service on `25`
+- `tempmail-postgres` PostgreSQL
+- `tempmail-redis` Redis
 - `web` reverse proxy on `80` / `443`
-- runtime state persisted in Docker volume `/data`
+- runtime state persisted in Docker volumes

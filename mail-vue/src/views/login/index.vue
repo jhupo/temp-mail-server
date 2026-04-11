@@ -1,5 +1,5 @@
 <template>
-  <div id="login-box" :style=" background ? 'background: var(--el-bg-color)' : ''" v-loading="oauthLoading" element-loading-text="登录中...">
+  <div id="login-box" :style="background ? 'background: var(--el-bg-color)' : ''">
     <div id="background-wrap" v-if="!settingStore.settings.background">
       <div class="x1 cloud"></div>
       <div class="x2 cloud"></div>
@@ -39,13 +39,9 @@
               </div>
             </template>
           </el-input>
-          <el-input v-model="form.password" :placeholder="$t('password')" type="password" autocomplete="off">
-          </el-input>
-          <el-button class="btn" type="primary" @click="submit" :loading="loginLoading"
-          >{{ $t('loginBtn') }}
-          </el-button>
-          <el-button class="btn" v-if="settingStore.settings.linuxdoSwitch"  style="margin-top: 10px"  @click="linuxDoLogin">
-            <el-avatar src="/image/linuxdo.webp" :size="18" style="margin-right: 10px" />LinuxDo
+          <el-input v-model="form.password" :placeholder="$t('password')" type="password" autocomplete="off" />
+          <el-button class="btn" type="primary" @click="submit" :loading="loginLoading">
+            {{ $t('loginBtn') }}
           </el-button>
         </div>
         <div v-show="show !== 'login'">
@@ -81,21 +77,8 @@
                     type="text" autocomplete="off"/>
           <el-input v-if="settingStore.settings.regKey === 2" v-model="registerForm.code"
                     :placeholder="$t('regKeyOptional')" type="text" autocomplete="off"/>
-          <div v-show="verifyShow"
-               class="register-turnstile"
-               :data-sitekey="settingStore.settings.siteKey"
-               data-callback="onTurnstileSuccess"
-               data-error-callback="onTurnstileError"
-               data-after-interactive-callback="loadAfter"
-               data-before-interactive-callback="loadBefore"
-          >
-            <span style="font-size: 12px;color: #F56C6C" v-if="botJsError">{{ $t('verifyModuleFailed') }}</span>
-          </div>
-          <el-button class="btn" style="margin: 0" type="primary" @click="submitRegister" :loading="registerLoading"
-          >{{ $t('regBtn') }}
-          </el-button>
-          <el-button v-if="settingStore.settings.linuxdoSwitch" class="btn" style="margin-top: 10px"  @click="linuxDoLogin">
-            <el-avatar src="/image/linuxdo.webp" :size="18" style="margin-right: 10px" />LinuxDo
+          <el-button class="btn" style="margin: 0" type="primary" @click="submitRegister" :loading="registerLoading">
+            {{ $t('regBtn') }}
           </el-button>
         </div>
         <template v-if="settingStore.settings.register === 0">
@@ -106,40 +89,6 @@
         </template>
       </div>
     </div>
-    <el-dialog class="bind-dialog" v-model="showBindForm"  title="注册邮箱" >
-      <div class="bind-container">
-        <el-input v-model="bindForm.email" type="text" :placeholder="$t('emailAccount')" autocomplete="off">
-          <template #append>
-            <div @click.stop="openSelect">
-              <el-select
-                  ref="mySelect"
-                  v-model="suffix"
-                  :placeholder="$t('select')"
-                  class="select"
-              >
-                <el-option
-                    v-for="item in domainList"
-                    :key="item"
-                    :label="item"
-                    :value="item"
-                />
-              </el-select>
-              <div>
-                <span>{{ suffix }}</span>
-                <Icon class="setting-icon" icon="mingcute:down-small-fill" width="20" height="20"/>
-              </div>
-            </div>
-          </template>
-        </el-input>
-        <el-input v-if="settingStore.settings.regKey === 0" v-model="bindForm.code" :placeholder="$t('regKey')"
-                  type="text" autocomplete="off"/>
-        <el-input v-if="settingStore.settings.regKey === 2" v-model="bindForm.code"
-                  :placeholder="$t('regKeyOptional')" type="text" autocomplete="off"/>
-        <el-button class="btn" type="primary" @click="bind" :loading="bindLoading"
-        >绑定
-        </el-button>
-      </div>
-    </el-dialog>
     <a v-show="settingStore.settings.projectLink" class="github" href="https://github.com/maillab/cloud-mail">
       <Icon icon="mingcute:github-line" color="#1890ff" width="20" height="20" />
     </a>
@@ -148,9 +97,8 @@
 
 <script setup>
 import router from "@/router";
-import {computed, nextTick, reactive, ref} from "vue";
-import {login} from "@/request/login.js";
-import {register} from "@/request/login.js";
+import {computed, reactive, ref} from "vue";
+import {login, register} from "@/request/login.js";
 import {isEmail} from "@/utils/verify-utils.js";
 import {useSettingStore} from "@/store/setting.js";
 import {useAccountStore} from "@/store/account.js";
@@ -161,236 +109,77 @@ import {cvtR2Url} from "@/utils/convert.js";
 import {loginUserInfo} from "@/request/my.js";
 import {permsToRouter} from "@/perm/perm.js";
 import {useI18n} from "vue-i18n";
-import {oauthBindUser, oauthLinuxDoLogin} from "@/request/ouath.js";
 
 const {t} = useI18n();
 const accountStore = useAccountStore();
 const userStore = useUserStore();
 const uiStore = useUiStore();
 const settingStore = useSettingStore();
-const loginLoading = ref(false)
-const bindLoading = ref(false)
-const oauthLoading = ref(false);
-const showBindForm = ref(false);
-const show = ref('login')
-
-const bindForm = reactive({
-  email: '',
-  oauthUserId: '',
-  code: ''
-})
+const loginLoading = ref(false);
+const show = ref('login');
 
 const form = reactive({
   email: '',
   password: '',
-
 });
-const mySelect = ref()
-const suffix = ref('')
+
+const mySelect = ref();
+const suffix = ref('');
 const registerForm = reactive({
   email: '',
   password: '',
   confirmPassword: '',
   code: null
-})
+});
 const domainList = settingStore.domainList;
-const registerLoading = ref(false)
-suffix.value = domainList[0]
-const verifyShow = ref(false)
-let verifyToken = ''
-let turnstileId = null
-let botJsError = ref(false)
-let verifyErrorCount = 0
-
-window.onTurnstileSuccess = (token) => {
-  verifyToken = token;
-};
-
-window.onTurnstileError = (e) => {
-  if (verifyErrorCount >= 4) {
-    return
-  }
-  verifyErrorCount++
-  console.warn('人机验加载失败', e)
-  setTimeout(() => {
-    nextTick(() => {
-      if (!turnstileId) {
-        turnstileId = window.turnstile.render('.register-turnstile')
-      } else {
-        window.turnstile.reset(turnstileId);
-      }
-    })
-  }, 1500)
-};
-
-window.loadAfter = (e) => {
-  console.log('loadAfter')
-}
-
-window.loadBefore = (e) => {
-  console.log('loadBefore')
-}
+const registerLoading = ref(false);
+suffix.value = domainList[0];
 
 const loginOpacity = computed(() => {
-  const opacity = settingStore.settings.loginOpacity
-  return uiStore.dark ? `rgba(0, 0, 0, ${opacity})` : `rgba(255, 255, 255, ${opacity})`
-})
+  const opacity = settingStore.settings.loginOpacity;
+  return uiStore.dark ? `rgba(0, 0, 0, ${opacity})` : `rgba(255, 255, 255, ${opacity})`;
+});
 
 const background = computed(() => {
-
   return settingStore.settings.background ? {
     'background-image': `url(${cvtR2Url(settingStore.settings.background)})`,
     'background-repeat': 'no-repeat',
     'background-size': 'cover',
     'background-position': 'center'
-  } : ''
-})
+  } : '';
+});
 
 const openSelect = () => {
-  mySelect.value.toggleMenu()
-}
-
-function linuxDoLogin() {
-  const clientId = settingStore.settings.linuxdoClientId
-  const redirectUri = encodeURIComponent(settingStore.settings.linuxdoCallbackUrl)
-  window.location.href =
-      `https://connect.linux.do/oauth2/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=openid+profile+email`
-}
-
-linuxDoGetUser();
-
-async function linuxDoGetUser() {
-
-  const params = new URLSearchParams(window.location.search)
-  const code = params.get('code')
-
-  if (code) {
-
-    oauthLoading.value = true
-    oauthLinuxDoLogin(code).then(data => {
-
-      bindForm.oauthUserId = data.userInfo.oauthUserId;
-
-      if (!data.token) {
-        showBindForm.value = true
-        oauthLoading.value = false
-        ElMessage({
-          message: '请注册绑定一个邮箱',
-          type: 'warning',
-          duration: 4000,
-          plain: true,
-        })
-        return;
-      }
-
-      saveToken(data.token);
-    }).catch(() => {
-      oauthLoading.value = false
-    })
-  }
-
-  const cleanUrl = window.location.origin + window.location.pathname
-  window.history.replaceState({}, '', cleanUrl)
-}
-
-function bind() {
-
-  if (!bindForm.email) {
-    ElMessage({
-      message: t('emptyEmailMsg'),
-      type: 'error',
-      plain: true,
-    })
-    return
-  }
-
-
-  if (bindForm.email.length < settingStore.settings.minEmailPrefix) {
-    ElMessage({
-      message: t('minEmailPrefix', {msg: settingStore.settings.minEmailPrefix}),
-      type: 'error',
-      plain: true,
-    })
-    return
-  }
-
-  let email = bindForm.email + suffix.value;
-
-
-  if (!isEmail(email)) {
-    ElMessage({
-      message: t('notEmailMsg'),
-      type: 'error',
-      plain: true,
-    })
-    return
-  }
-
-  if (settingStore.settings.regKey === 0) {
-
-    if (!bindForm.code) {
-
-      ElMessage({
-        message: t('emptyRegKeyMsg'),
-        type: 'error',
-        plain: true,
-      })
-      return
-    }
-
-  }
-
-  const form = {email: bindForm.email + suffix.value, oauthUserId: bindForm.oauthUserId, code: bindForm.code}
-
-  bindLoading.value = true
-  oauthBindUser(form).then(data => {
-    saveToken(data.token)
-  }).catch(() => {
-    bindLoading.value = false
-  })
-}
+  mySelect.value.toggleMenu();
+};
 
 const submit = () => {
-
   if (!form.email) {
-    ElMessage({
-      message: t('emptyEmailMsg'),
-      type: 'error',
-      plain: true,
-    })
-    return
+    ElMessage({ message: t('emptyEmailMsg'), type: 'error', plain: true });
+    return;
   }
 
-  let email = form.email + (settingStore.settings.loginDomain === 0 ? suffix.value : '');
-
+  const email = form.email + (settingStore.settings.loginDomain === 0 ? suffix.value : '');
   if (!isEmail(email)) {
-    ElMessage({
-      message: t('notEmailMsg'),
-      type: 'error',
-      plain: true,
-    })
-    return
+    ElMessage({ message: t('notEmailMsg'), type: 'error', plain: true });
+    return;
   }
 
   if (!form.password) {
-    ElMessage({
-      message: t('emptyPwdMsg'),
-      type: 'error',
-      plain: true,
-    })
-    return
+    ElMessage({ message: t('emptyPwdMsg'), type: 'error', plain: true });
+    return;
   }
 
-  loginLoading.value = true
+  loginLoading.value = true;
   login(email, form.password).then(async data => {
-    await saveToken(data.token)
+    await saveToken(data.token);
   }).finally(() => {
-    loginLoading.value = false
-  })
-}
+    loginLoading.value = false;
+  });
+};
 
 async function saveToken(token) {
-  localStorage.setItem('token', token)
+  localStorage.setItem('token', token);
   const user = await loginUserInfo();
   accountStore.currentAccountId = user.account.accountId;
   accountStore.currentAccount = user.account;
@@ -399,157 +188,66 @@ async function saveToken(token) {
   routers.forEach(routerData => {
     router.addRoute('layout', routerData);
   });
-  await router.replace({name: 'layout'})
-  uiStore.showNotice()
-  oauthLoading.value = false;
-  bindLoading.value = false;
+  await router.replace({name: 'layout'});
+  uiStore.showNotice();
 }
 
-
 function submitRegister() {
-
   if (!registerForm.email) {
-    ElMessage({
-      message: t('emptyEmailMsg'),
-      type: 'error',
-      plain: true,
-    })
-    return
-  }
-
-  console.log(registerForm.email)
-
-  if (registerForm.email.length < settingStore.settings.minEmailPrefix) {
-    ElMessage({
-      message: t('minEmailPrefix', {msg: settingStore.settings.minEmailPrefix}),
-      type: 'error',
-      plain: true,
-    })
-    return
-  }
-
-  if (!isEmail(registerForm.email + suffix.value)) {
-    ElMessage({
-      message: t('notEmailMsg'),
-      type: 'error',
-      plain: true,
-    })
-    return
-  }
-
-  if (!registerForm.password) {
-    ElMessage({
-      message: t('emptyPwdMsg'),
-      type: 'error',
-      plain: true,
-    })
-    return
-  }
-
-  if (registerForm.password.length < 6) {
-    ElMessage({
-      message: t('pwdLengthMsg'),
-      type: 'error',
-      plain: true,
-    })
-    return
-  }
-
-  if (registerForm.password !== registerForm.confirmPassword) {
-
-    ElMessage({
-      message: t('confirmPwdFailMsg'),
-      type: 'error',
-      plain: true,
-    })
-    return
-  }
-
-  if (settingStore.settings.regKey === 0) {
-
-    if (!registerForm.code) {
-
-      ElMessage({
-        message: t('emptyRegKeyMsg'),
-        type: 'error',
-        plain: true,
-      })
-      return
-    }
-
-  }
-
-  if (!verifyToken && (settingStore.settings.registerVerify === 0 || (settingStore.settings.registerVerify === 2 && settingStore.settings.regVerifyOpen))) {
-    if (!verifyShow.value) {
-      verifyShow.value = true
-      nextTick(() => {
-        if (!turnstileId) {
-          try {
-            turnstileId = window.turnstile.render('.register-turnstile')
-          } catch (e) {
-            botJsError.value = true
-            console.log('人机验证js加载失败')
-          }
-        } else {
-          window.turnstile.reset('.register-turnstile')
-        }
-      })
-    } else if (!botJsError.value) {
-      ElMessage({
-        message: t('botVerifyMsg'),
-        type: "error",
-        plain: true
-      })
-    }
+    ElMessage({ message: t('emptyEmailMsg'), type: 'error', plain: true });
     return;
   }
 
-  registerLoading.value = true
-
-  const form = {
-    email: registerForm.email + suffix.value,
-    password: registerForm.password,
-    token: verifyToken,
-    code: registerForm.code
+  if (registerForm.email.length < settingStore.settings.minEmailPrefix) {
+    ElMessage({ message: t('minEmailPrefix', {msg: settingStore.settings.minEmailPrefix}), type: 'error', plain: true });
+    return;
   }
 
-  register(form).then(({regVerifyOpen}) => {
-    show.value = 'login'
-    registerForm.email = ''
-    registerForm.password = ''
-    registerForm.confirmPassword = ''
-    registerForm.code = ''
-    registerLoading.value = false
-    verifyToken = ''
-    settingStore.settings.regVerifyOpen = regVerifyOpen
-    verifyShow.value = false
-    ElMessage({
-      message: t('regSuccessMsg'),
-      type: 'success',
-      plain: true,
-    })
-  }).catch(res => {
+  if (!isEmail(registerForm.email + suffix.value)) {
+    ElMessage({ message: t('notEmailMsg'), type: 'error', plain: true });
+    return;
+  }
 
-    registerLoading.value = false
+  if (!registerForm.password) {
+    ElMessage({ message: t('emptyPwdMsg'), type: 'error', plain: true });
+    return;
+  }
 
-    if (res.code === 400) {
-      verifyToken = ''
-      settingStore.settings.regVerifyOpen = true
-      if (turnstileId) {
-        window.turnstile.reset(turnstileId)
-      } else {
-        nextTick(() => {
-          turnstileId = window.turnstile.render('.register-turnstile')
-        })
-      }
-      verifyShow.value = true
+  if (registerForm.password.length < 6) {
+    ElMessage({ message: t('pwdLengthMsg'), type: 'error', plain: true });
+    return;
+  }
 
-    }
+  if (registerForm.password !== registerForm.confirmPassword) {
+    ElMessage({ message: t('confirmPwdFailMsg'), type: 'error', plain: true });
+    return;
+  }
+
+  if (settingStore.settings.regKey === 0 && !registerForm.code) {
+    ElMessage({ message: t('emptyRegKeyMsg'), type: 'error', plain: true });
+    return;
+  }
+
+  registerLoading.value = true;
+  const payload = {
+    email: registerForm.email + suffix.value,
+    password: registerForm.password,
+    code: registerForm.code
+  };
+
+  register(payload).then(({regVerifyOpen}) => {
+    show.value = 'login';
+    registerForm.email = '';
+    registerForm.password = '';
+    registerForm.confirmPassword = '';
+    registerForm.code = '';
+    settingStore.settings.regVerifyOpen = regVerifyOpen;
+    ElMessage({ message: t('regSuccessMsg'), type: 'success', plain: true });
+  }).finally(() => {
+    registerLoading.value = false;
   });
 }
-
 </script>
-
 
 <style>
 .el-select-dropdown__item {
@@ -564,7 +262,6 @@ function submitRegister() {
 </style>
 
 <style lang="scss" scoped>
-
 .form-wrapper {
   position: fixed;
   right: 0;
@@ -656,21 +353,6 @@ function submitRegister() {
   padding: 0 10px;
 }
 
-:deep(.bind-dialog) {
-  width: 400px !important;
-  @media (max-width: 440px) {
-    width: calc(100% - 40px) !important;
-    margin-right: 20px !important;
-    margin-left: 20px !important;
-  }
-}
-
-.bind-container {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 15px;
-}
-
 .setting-icon {
   position: relative;
   top: 6px;
@@ -705,10 +387,6 @@ function submitRegister() {
   margin: 0;
 }
 
-.register-turnstile {
-  margin-bottom: 18px;
-}
-
 .select {
   position: absolute;
   right: 30px;
@@ -726,7 +404,6 @@ function submitRegister() {
   width: 180px;
 }
 
-
 #login-box {
   background: linear-gradient(to bottom, #2980b9, #6dd5fa, #fff);
   font: 100% Arial, sans-serif;
@@ -737,7 +414,6 @@ function submitRegister() {
   display: grid;
   grid-template-columns: 1fr;
 }
-
 
 #background-wrap {
   height: 100%;
@@ -811,5 +487,4 @@ function submitRegister() {
   right: 50px;
   top: -90px;
 }
-
 </style>
